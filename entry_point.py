@@ -31,12 +31,9 @@ def generate_single_sample(workdir, stdout, stderr, larsoft_opts, inputs=[], out
     By convention, the inputs are:
     inputs[0] = n_events
     inputs[1] = fcl_file (A File object)
-    inputs[2] = small_group_id
-    inputs[3] = medium_group_id
-    inputs[4] = big_group_id
-    inputs[5] = run_id
+    inputs[2] = optional larsoft input file
 
-    outputs[0] = larcv file (File object)
+    outputs[0] = larsoft file (File object)
 
     """
 
@@ -44,14 +41,14 @@ def generate_single_sample(workdir, stdout, stderr, larsoft_opts, inputs=[], out
 
     # Move to the subdir for this:
 
-    output = "temporary_larsoft_output.root"
-    larcv_temp_output = output.replace(".root", "_larcv.h5")
+    absolute_output_file = str(workdir / outputs[0])
 
     template = '''
 echo "Job starting!"
 echo "Move fcl."
 cp {fhicl} {workdir}/
 cd {workdir}
+export LOCAL_FCL=$(basename {fhicl})
 date
 hostname
 echo "Current files: "
@@ -61,7 +58,7 @@ module load singularity
 echo "Current directory: "
 pwd
 set -e
-singularity run -B /lus/grand/projects/:/lus/grand/projects/:rw /lus/grand/projects/neutrino_osc_ADSP/containers/fnal-wn-sl7.sing <<EOF
+singularity run -B /lus/eagle/ -B /lus/grand/ {container} <<EOF
     echo "Running in: "
     pwd
     echo "Sourcing products area"
@@ -71,7 +68,15 @@ singularity run -B /lus/grand/projects/:/lus/grand/projects/:rw /lus/grand/proje
     echo "Products setup!"
     # get the fcls
     set -e
-    lar -c {fhicl} --nevts {nevts} --output {output}
+    # Add an optional input file:
+    export lar_cmd="-c ${{LOCAL_FCL}} --nevts {nevts} --output {output}"
+    echo \${{lar_cmd}}
+    if [ -f {input} ]; then
+        export lar_cmd="\${{lar_cmd}} --input {input} "
+    fi
+    echo "About to run larsoft"
+    echo \${{lar_cmd}}
+    lar \${{lar_cmd}}
     set +e
 
     # Clean up temporary files, if they exist:
@@ -89,9 +94,12 @@ hostname
         software = larsoft_opts["software"],
         version  = larsoft_opts["version"],
         qual     = larsoft_opts["qual"],
+        container = larsoft_opts["container"],
+        larsoft_top     = larsoft_opts["larsoft_top"],
         fhicl    = inputs[1],
         nevts    = inputs[0],
-        output   = output,
+        input    = inputs[2],
+        output   = absolute_output_file,
     )
     return template
 
@@ -102,42 +110,39 @@ def generate_small_group_of_files(output_top : pathlib.Path, larsoft_opts : dict
     workdir = output_top
     workdir.mkdir(parents=True, exist_ok=True)
 
+
+    # Loop through the fcl files and generate.  First file assumes no input.
+    # Then, capture output as next input.
+
+    input_file = None
     sample_futures = []
-    for mode in ["nueCC", "numuCC", "NC"]:
+    for fcl in fcls:
+        # TODO: Could use a better fcl to output naming technique
+        output = os.path.basename(fcl)
+        output = output.replace(".fcl", ".root")
+        print(output)
         # Generate the futures for the three indivudual components:
-        mode_file = workdir / pathlib.Path(f"{mode}/{file_base}")
-        this_workdir = workdir / pathlib.Path(mode)
-        mode_file.parent.mkdir(exist_ok=True, parents=True)
         # print(this_workdir)
-        mode_future = generate_single_sample(
+        this_future = generate_single_sample(
             inputs = [
                 10,
-                fcl_lookup[mode],
-                small_group_id,
-                medium_group_id,
-                big_group_id,
-                run_id,
+                fcl,
+                input_file,
             ],
             outputs = [
-                File(str(mode_file))
+                File(str(output))
             ],
-            stdout = str(this_workdir) + "/lar.out",
-            stderr = str(this_workdir) + "/lar.err",
-            workdir = str(this_workdir)
+            stdout = str(workdir) + "/lar.out",
+            stderr = str(workdir) + "/lar.err",
+            larsoft_opts = larsoft_opts,
+            workdir = str(workdir)
         )
-        sample_futures.append(mode_future)
-    # print(sample_futures)
-    # print([o.outputs[0] for o in sample_futures])
-    preprocess_job = preprocess_larcv_files(
-        workdir = str(workdir),
-        stdout  = str(workdir) + "/preprocess.out",
-        stderr  = str(workdir) + "/preprocess.err",
-        inputs  = [fcl_lookup["preproc"],] + [o.outputs[0] for o in sample_futures],
-        outputs = [File(str(workdir / pathlib.Path(preproces_file)) ) ],
-    )
+        sample_futures.append(this_future)
 
-    # # Return the future for this job
-    return preprocess_job
+        input_file = this_future.outputs[0]
+
+    # Return the last future for this job
+    return sample_futures[-1]
 
 
 def build_parser():
@@ -226,28 +231,19 @@ def main():
     config = create_config(user_opts)
 
     print(config)
-    exit()
     parsl.clear()
     parsl.load(config)
-
-
-    all_futures = []
-    for i_run in range(n_runs):
-        sim_future = sim_and_reco_run(
-            top_dir       = output_dir,
-            run           = i_run,
-            n_subruns     = n_subruns,
-            start_event   = i_run*events_per_run,
-            subrun_offset = subrun_offset,
-            n_events      = events_per_file,
-            templates     = nexus_input_templates,
-            detector      = args.detector,
-            sample        = args.sample,
-            ic_template_dir = IC_template_dir
+    
+    futures = []
+    for i in range(10):
+        this_out_dir = output_dir / pathlib.Path(f"subrun_{i}")
+        futures.append(generate_small_group_of_files(
+            output_top   = this_out_dir, 
+            larsoft_opts = larsoft_opts,
+            fcls = fcls)
         )
-        all_futures += sim_future
-
-    print(all_futures[-1].result())
+        
+    print(futures[-1].result())
 
 
 if __name__ == "__main__":
