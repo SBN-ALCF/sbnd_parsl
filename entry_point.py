@@ -40,8 +40,7 @@ def generate_single_sample(workdir, stdout, stderr, larsoft_opts, inputs=[], out
     # Copy the fcl file to the work dir
 
     # Move to the subdir for this:
-
-    absolute_output_file = str(workdir / outputs[0])
+    print(inputs)
 
     template = '''
 echo "Job starting!"
@@ -72,7 +71,7 @@ singularity run -B /lus/eagle/ -B /lus/grand/ {container} <<EOF
     export lar_cmd="-c ${{LOCAL_FCL}} --nevts {nevts} --output {output}"
     echo \${{lar_cmd}}
     if [ -f {input} ]; then
-        export lar_cmd="\${{lar_cmd}} --input {input} "
+        export lar_cmd="\${{lar_cmd}} --source {input} "
     fi
     echo "About to run larsoft"
     echo \${{lar_cmd}}
@@ -99,7 +98,7 @@ hostname
         fhicl    = inputs[1],
         nevts    = inputs[0],
         input    = inputs[2],
-        output   = absolute_output_file,
+        output   = outputs[0],
     )
     return template
 
@@ -120,17 +119,18 @@ def generate_small_group_of_files(output_top : pathlib.Path, larsoft_opts : dict
         # TODO: Could use a better fcl to output naming technique
         output = os.path.basename(fcl)
         output = output.replace(".fcl", ".root")
-        print(output)
+        absolute_output_file = workdir / pathlib.Path(output)
+
         # Generate the futures for the three indivudual components:
         # print(this_workdir)
         this_future = generate_single_sample(
             inputs = [
-                10,
+                100,
                 fcl,
                 input_file,
             ],
             outputs = [
-                File(str(output))
+                File(str(absolute_output_file))
             ],
             stdout = str(workdir) + "/lar.out",
             stderr = str(workdir) + "/lar.err",
@@ -138,7 +138,6 @@ def generate_small_group_of_files(output_top : pathlib.Path, larsoft_opts : dict
             workdir = str(workdir)
         )
         sample_futures.append(this_future)
-
         input_file = this_future.outputs[0]
 
     # Return the last future for this job
@@ -212,6 +211,7 @@ def main():
     
     fcls = [
         "fcls/prodoverlay_corsika_cosmics_proton_genie_rockbox_sce.fcl",
+        "fcls/g4_sce_dirt_filter_lite_wc.fcl",
         "fcls/detsim_sce_lite_wc.fcl",
     ]
 
@@ -235,7 +235,7 @@ def main():
     parsl.load(config)
     
     futures = []
-    for i in range(10):
+    for i in range(50):
         this_out_dir = output_dir / pathlib.Path(f"subrun_{i}")
         futures.append(generate_small_group_of_files(
             output_top   = this_out_dir, 
