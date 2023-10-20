@@ -4,21 +4,24 @@ from parsl.addresses import address_by_interface
 
 from parsl.providers import PBSProProvider, LocalProvider
 from parsl.executors import HighThroughputExecutor, ThreadPoolExecutor
+from parsl.launchers import MpiExecLauncher, GnuParallelLauncher
 
 def create_provider_by_hostname(user_opts):
 
     hostname = socket.gethostname()
     if 'polaris' in hostname:
+        # TODO: The worker init should be somewhere outside Corey's homedir
         provider = PBSProProvider(
             account         = user_opts["allocation"],
             queue           = user_opts["queue"],
-            nodes_per_block = 1,
+            nodes_per_block = 2,
             cpus_per_node   = user_opts["cpus_per_node"],
             init_blocks     = 1,
             max_blocks      = 1,
             walltime        = user_opts["walltime"],
             scheduler_options = '#PBS -l filesystems=home:grand:eagle',
-            worker_init     = "",
+            launcher        = MpiExecLauncher(bind_cmd="--cpu-bind"),
+            worker_init     = "module load conda/2023-10-04.lua; conda activate; source /home/cadams/Polaris/parsl-conda-2023-10-04/bin/activate",
         )
         return provider
     else:

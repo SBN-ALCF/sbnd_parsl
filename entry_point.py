@@ -14,7 +14,6 @@ from parsl.config import Config
 
 # from libsubmit.providers.local.local import Local
 from parsl.channels import LocalChannel
-from parsl.launchers import MpiExecLauncher, GnuParallelLauncher
 from parsl.addresses import address_by_hostname
 from parsl.monitoring.monitoring import MonitoringHub
 from parsl.utils import get_all_checkpoints
@@ -44,6 +43,7 @@ def generate_single_sample(workdir, stdout, stderr, larsoft_opts, inputs=[], out
 
     template = '''
 echo "Job starting!"
+pwd
 echo "Move fcl."
 cp {fhicl} {workdir}/
 cd {workdir}
@@ -208,13 +208,15 @@ def main():
     }
 
     # What fcls to run, and in what order:
-    
     fcls = [
         "fcls/prodoverlay_corsika_cosmics_proton_genie_rockbox_sce.fcl",
         "fcls/g4_sce_dirt_filter_lite_wc.fcl",
         "fcls/detsim_sce_lite_wc.fcl",
     ]
 
+    # Make these fcl paths absolute without hardcoding it:
+    script_dir = os.path.dirname(os.path.realpath(__file__))
+    fcls = [script_dir + "/" + f for f in fcls]
 
     # Where to put the outputs?
     output_dir = args.output_dir
