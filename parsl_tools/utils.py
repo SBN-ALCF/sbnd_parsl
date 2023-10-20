@@ -21,7 +21,7 @@ def create_provider_by_hostname(user_opts):
             walltime        = user_opts["walltime"],
             scheduler_options = '#PBS -l filesystems=home:grand:eagle',
             launcher        = MpiExecLauncher(bind_cmd="--cpu-bind"),
-            worker_init     = "module load conda/2023-10-04.lua; conda activate; source /home/cadams/Polaris/parsl-conda-2023-10-04/bin/activate",
+            worker_init     = "module load conda/2023-10-04.lua; conda activate; source /lus/grand/projects/neutrinoGPU/software/parsl-conda-2023-10-04/bin/activate",
         )
         return provider
     else:
