@@ -66,7 +66,7 @@ def create_default_useropts(allocation="datascience"):
             # Node setup: activate necessary conda environment and such.
             'worker_init': '',
             'scheduler_options': '',
-            'allocation': 'datascience',
+            'allocation': allocation,
             'queue': 'debug',
             'walltime': '1:00:00',
             'nodes_per_block' : 1,

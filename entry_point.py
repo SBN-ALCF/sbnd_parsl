@@ -115,7 +115,7 @@ def generate_small_group_of_files(output_top : pathlib.Path, larsoft_opts : dict
 
     input_file = None
     sample_futures = []
-    for fcl in fcls:
+    for i, fcl in enumerate(fcls):
         # TODO: Could use a better fcl to output naming technique
         output = os.path.basename(fcl)
         output = output.replace(".fcl", ".root")
@@ -125,15 +125,15 @@ def generate_small_group_of_files(output_top : pathlib.Path, larsoft_opts : dict
         # print(this_workdir)
         this_future = generate_single_sample(
             inputs = [
-                100,
+                20,
                 fcl,
                 input_file,
             ],
             outputs = [
                 File(str(absolute_output_file))
             ],
-            stdout = str(workdir) + "/lar.out",
-            stderr = str(workdir) + "/lar.err",
+            stdout = str(workdir) + f"/larStage{i}.out",
+            stderr = str(workdir) + f"/larStage{i}.err",
             larsoft_opts = larsoft_opts,
             workdir = str(workdir)
         )
@@ -150,10 +150,6 @@ def build_parser():
     p = argparse.ArgumentParser(description="Main entry script for simulating/reconstructing sbnd data.",
         formatter_class=argparse.RawDescriptionHelpFormatter)
     
-    p.add_argument("--sample", "-s", type=lambda x : str(x).lower(),
-                   required=True,
-                   choices=["beam-simulation"],
-                   help="Configuration to run")
     p.add_argument("--events-per-file", "-e", type=int,
                    default=25,
                    help="Number of nexus events per file")
@@ -212,6 +208,9 @@ def main():
         "fcls/prodoverlay_corsika_cosmics_proton_genie_rockbox_sce.fcl",
         "fcls/g4_sce_dirt_filter_lite_wc.fcl",
         "fcls/detsim_sce_lite_wc.fcl",
+        "fcls/wirecell_sim_sp_sbnd_opcrt.fcl",
+        "fcls/reco1_sce_lite_wc2d.fcl",
+        "fcls/reco2_sce.fcl",
     ]
 
     # Make these fcl paths absolute without hardcoding it:
@@ -225,7 +224,7 @@ def main():
     print(args)
     
     # Next, set up the user options:
-    user_opts = create_default_useropts(allocation="datascience")
+    user_opts = create_default_useropts(allocation="neutrinoGPU")
     user_opts["run_dir"] = f"{str(output_dir)}/runinfo"
 
     print(user_opts)
@@ -237,7 +236,7 @@ def main():
     parsl.load(config)
     
     futures = []
-    for i in range(50):
+    for i in range(8):
         this_out_dir = output_dir / pathlib.Path(f"subrun_{i}")
         futures.append(generate_small_group_of_files(
             output_top   = this_out_dir, 
