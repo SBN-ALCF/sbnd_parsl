@@ -125,7 +125,7 @@ def generate_small_group_of_files(output_top : pathlib.Path, larsoft_opts : dict
         # print(this_workdir)
         this_future = generate_single_sample(
             inputs = [
-                20,
+                200,
                 fcl,
                 input_file,
             ],
@@ -226,6 +226,10 @@ def main():
     # Next, set up the user options:
     user_opts = create_default_useropts(allocation="neutrinoGPU")
     user_opts["run_dir"] = f"{str(output_dir)}/runinfo"
+    user_opts["queue"] = "prod"
+    user_opts["walltime"] = "3:00:00"
+    # to test hypterthreading
+    # user_opts["cpus_per_node"] = 64
 
     print(user_opts)
     # This creates a parsl config:
@@ -236,8 +240,8 @@ def main():
     parsl.load(config)
     
     futures = []
-    for i in range(8):
-        this_out_dir = output_dir / pathlib.Path(f"subrun_{i}")
+    for i in range(500):
+        this_out_dir = output_dir / pathlib.Path(f"subrun_{i:03d}")
         futures.append(generate_small_group_of_files(
             output_top   = this_out_dir, 
             larsoft_opts = larsoft_opts,

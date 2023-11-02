@@ -14,7 +14,7 @@ def create_provider_by_hostname(user_opts):
         provider = PBSProProvider(
             account         = user_opts["allocation"],
             queue           = user_opts["queue"],
-            nodes_per_block = 2,
+            nodes_per_block = 10,
             cpus_per_node   = user_opts["cpus_per_node"],
             init_blocks     = 1,
             max_blocks      = 1,
