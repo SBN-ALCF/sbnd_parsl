@@ -6,6 +6,7 @@ from parsl.providers import PBSProProvider, LocalProvider
 from parsl.executors import HighThroughputExecutor, ThreadPoolExecutor
 from parsl.launchers import MpiExecLauncher, GnuParallelLauncher
 
+
 def create_provider_by_hostname(user_opts):
 
     hostname = socket.gethostname()
@@ -14,7 +15,7 @@ def create_provider_by_hostname(user_opts):
         provider = PBSProProvider(
             account         = user_opts["allocation"],
             queue           = user_opts["queue"],
-            nodes_per_block = 10,
+            nodes_per_block = user_opts["nodes_per_block"],
             cpus_per_node   = user_opts["cpus_per_node"],
             init_blocks     = 1,
             max_blocks      = 1,
@@ -41,9 +42,11 @@ def create_executor_by_hostname(user_opts, provider):
                     max_workers=user_opts["cpus_per_node"],
                     cores_per_worker=1,
                     address=address_by_interface("bond0"),
+                    address_probe_timeout=120,
                     cpu_affinity="alternating",
                     prefetch_capacity=0,
-                    provider=provider
+                    provider=provider,
+                    block_error_handler=False
                 )
     
     else:

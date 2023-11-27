@@ -1,6 +1,10 @@
+# Modification of entry point to just do reco steps on detsim files
+
+
 import sys, os
 import pathlib
 import argparse 
+import hashlib
 
 import parsl
 from parsl.app.app import bash_app
@@ -24,7 +28,6 @@ def generate_single_sample(workdir, stdout, stderr, larsoft_opts, inputs=[], out
     inputs[0] = n_events
     inputs[1] = fcl_file (A File object)
     inputs[2] = optional larsoft input file
-    inputs[3] = corsika flux files
 
     outputs[0] = larsoft file (File object)
 
@@ -35,29 +38,11 @@ def generate_single_sample(workdir, stdout, stderr, larsoft_opts, inputs=[], out
     # Move to the subdir for this:
     print(inputs)
 
-    template = r'''
+    template = '''
 echo "Job starting!"
 pwd
 echo "Move fcl."
 cp {fhicl} {workdir}/
-
-echo "Copy CORSIKA files"
-# disable glob temporarily
-set -o noglob
-# this pipe sequence extracts the path from the fcl file
-CORSIKA_FILES=$(sed -n '/ShowerInputFiles.*\[/,/\]/p' {fhicl} | sed -z 's/\n//g' | awk -F "\"" '{{print $2}}')
-
-if [ -z "$CORSIKA_FILES" ]; then
-	echo "key not found in {fhicl}"
-else
-    # we need to replace the path in the copied fcl file, and make sure the wildcard gets escaped
-    mkdir -p /tmp/corsika
-    sed -i "s|$(echo $CORSIKA_FILES | sed 's/\*/\\\*/g')|/tmp/corsika/\*.db|g" {workdir}/$(basename {fhicl})
-    set +o noglob
-    cp $CORSIKA_FILES /tmp/corsika/.
-fi
-set +o noglob
-
 cd {workdir}
 export LOCAL_FCL=$(basename {fhicl})
 date
@@ -69,7 +54,7 @@ module load singularity
 echo "Current directory: "
 pwd
 set -e
-singularity run -B /lus/eagle/ -B /lus/grand/ {container} <<EOF
+singularity run -B /lus/eagle/ {container} <<EOF
     echo "Running in: "
     pwd
     echo "Sourcing products area"
@@ -80,7 +65,7 @@ singularity run -B /lus/eagle/ -B /lus/grand/ {container} <<EOF
     # get the fcls
     set -e
     # Add an optional input file:
-    export lar_cmd="-c ${{LOCAL_FCL}} --nevts {nevts} --output {output}"
+    export lar_cmd="-c ${{LOCAL_FCL}} --output {output}"
     echo \${{lar_cmd}}
     if [ -f {input} ]; then
         export lar_cmd="\${{lar_cmd}} --source {input} "
@@ -107,16 +92,14 @@ hostname
         qual     = larsoft_opts["qual"],
         container = larsoft_opts["container"],
         larsoft_top     = larsoft_opts["larsoft_top"],
-        fhicl    = inputs[1],
-        nevts    = inputs[0],
-        input    = inputs[2],
+        fhicl    = inputs[0],
+        input    = inputs[1],
         output   = outputs[0],
     )
     return template
 
 
-def generate_small_group_of_files(output_top : pathlib.Path, larsoft_opts : dict, fcls : list):
-
+def generate_futures(output_top : pathlib.Path, larsoft_opts : dict, fcls : list, input_filename: str):
     # Make sure the output directory exists:
     workdir = output_top
     workdir.mkdir(parents=True, exist_ok=True)
@@ -125,7 +108,7 @@ def generate_small_group_of_files(output_top : pathlib.Path, larsoft_opts : dict
     # Loop through the fcl files and generate.  First file assumes no input.
     # Then, capture output as next input.
 
-    input_file = None
+    input_file = File(input_filename)
     sample_futures = []
     for i, fcl in enumerate(fcls):
         # TODO: Could use a better fcl to output naming technique
@@ -137,7 +120,6 @@ def generate_small_group_of_files(output_top : pathlib.Path, larsoft_opts : dict
         # print(this_workdir)
         this_future = generate_single_sample(
             inputs = [
-                100,
                 fcl,
                 input_file,
             ],
@@ -191,7 +173,7 @@ def create_config(user_opts):
             run_dir=user_opts["run_dir"],
             checkpoint_mode = 'task_exit',
             strategy=user_opts["strategy"],
-            retries=2,
+            retries=0,
             app_cache=True,
     )
     
@@ -208,19 +190,16 @@ def main():
 
     # Define here the larsoft options and installation information:
     larsoft_opts = {
-        "container"   : "/lus/grand/projects/neutrinoGPU/software/slf7.sif",
+        "container"   : "/lus/eagle/projects/neutrinoGPU/slf7.sif",
         "software"    : "sbndcode",
-        "larsoft_top" : "/lus/grand/projects/neutrinoGPU/software/larsoft", 
-        "version"     : "v09_78_04",
+        "larsoft_top" : "/lus/eagle/projects/neutrinoGPU/software/larsoft", 
+        "version"     : "v09_78_00",
         "qual"        : "e20:prof",
     }
 
     # What fcls to run, and in what order:
     fcls = [
-        "fcls/prodoverlay_corsika_cosmics_proton_genie_rockbox_sce.fcl",
-        "fcls/g4_sce_dirt_filter_lite_wc.fcl",
         "fcls/wirecell_sim_sp_sbnd.fcl",
-        "fcls/detsim_sce_lite_wc.fcl",
         "fcls/reco1_sce_lite_wc2d.fcl",
         "fcls/reco2_sce.fcl",
     ]
@@ -238,9 +217,8 @@ def main():
     # Next, set up the user options:
     user_opts = create_default_useropts(allocation="neutrinoGPU")
     user_opts["run_dir"] = f"{str(output_dir)}/runinfo"
-    user_opts["queue"] = "prod"
-    user_opts["walltime"] = "3:00:00"
-    user_opts["nodes_per_block"] = 20
+    user_opts["queue"] = "debug"
+    user_opts["walltime"] = "1:00:00"
     # to test hypterthreading
     # user_opts["cpus_per_node"] = 64
 
@@ -251,14 +229,21 @@ def main():
     print(config)
     parsl.clear()
     parsl.load(config)
-    
+
+    # TODO a bit fragile!
+    # create short hashes for file names so that parsl always looks in the same directory for a given file name
+    file_list = list(pathlib.Path('/lus/eagle/projects/neutrinoGPU/test-reco').glob("**/prodgenie*.root"))
+    hash_names = [hashlib.shake_128(bytes(f)).hexdigest(16) for f in file_list]
+
     futures = []
-    for i in range(320):
-        this_out_dir = output_dir / pathlib.Path(f"{i//10:03d}") / pathlib.Path(f"subrun_{i:04d}")
-        futures.append(generate_small_group_of_files(
+    for h, fname in zip(hash_names, file_list):
+        this_out_dir = output_dir / pathlib.Path(f"subrun_{h}")
+        futures.append(generate_futures(
             output_top   = this_out_dir, 
             larsoft_opts = larsoft_opts,
-            fcls = fcls)
+            fcls = fcls,
+            input_filename = str(fname)
+            )
         )
         
     print(list(f.result() for f in futures))
