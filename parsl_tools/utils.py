@@ -43,7 +43,7 @@ def create_executor_by_hostname(user_opts, provider):
                     cores_per_worker=1,
                     address=address_by_interface("bond0"),
                     address_probe_timeout=120,
-                    cpu_affinity="alternating",
+                    cpu_affinity="block",
                     prefetch_capacity=0,
                     provider=provider,
                     block_error_handler=False

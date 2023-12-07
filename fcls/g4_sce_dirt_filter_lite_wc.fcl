@@ -17,9 +17,10 @@
 
 outputs.out1.outputCommands: [ @sequence::outputs.out1.outputCommands,
                                @sequence::g4_drops,
-                               "keep *_ionandscint_*_*",
+			       "keep *_ionandscint_*_*",
                                "drop *_ionandscint_priorSCE_*"
                              ]
+
 
 
 

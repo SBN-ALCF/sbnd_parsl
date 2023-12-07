@@ -1,11 +1,12 @@
+# Modification of entry point to just do caf steps on reco2 files
+
 import sys, os
 import pathlib
 import argparse 
+import hashlib
 
 import parsl
 from parsl.app.app import bash_app
-
-# parsl.set_stream_logger() # <-- log everything to stdout
 
 from parsl.config import Config
 
@@ -34,12 +35,11 @@ def generate_single_sample(workdir, stdout, stderr, larsoft_opts, inputs=[], out
     # Move to the subdir for this:
     print(inputs)
 
-    template = r'''
+    template = '''
 echo "Job starting!"
 pwd
 echo "Move fcl."
 cp {fhicl} {workdir}/
-
 cd {workdir}
 export LOCAL_FCL=$(basename {fhicl})
 date
@@ -58,15 +58,13 @@ singularity run -B /lus/eagle/ -B /lus/grand/ {container} <<EOF
     #setup SBNDCODE:
     source {larsoft_top}/setup
     setup {software} {version} -q {qual}
+    setup sbndata v01_05
     echo "Products setup!"
     # get the fcls
     set -e
     # Add an optional input file:
-    export lar_cmd="-c ${{LOCAL_FCL}} --nevts {nevts} --output {output}"
+    export lar_cmd="-c ${{LOCAL_FCL}} --output {output} {input}"
     echo \${{lar_cmd}}
-    if [ -f {input} ]; then
-        export lar_cmd="\${{lar_cmd}} --source {input} "
-    fi
     echo "About to run larsoft"
     echo \${{lar_cmd}}
     lar \${{lar_cmd}}
@@ -89,16 +87,14 @@ hostname
         qual     = larsoft_opts["qual"],
         container = larsoft_opts["container"],
         larsoft_top     = larsoft_opts["larsoft_top"],
-        fhicl    = inputs[1],
-        nevts    = inputs[0],
-        input    = inputs[2],
+        fhicl    = inputs[0],
+        input    = inputs[1],
         output   = outputs[0],
     )
     return template
 
 
-def generate_small_group_of_files(output_top : pathlib.Path, larsoft_opts : dict, fcls : list):
-
+def generate_futures(output_top : pathlib.Path, larsoft_opts : dict, fcls : list, input_filename: str):
     # Make sure the output directory exists:
     workdir = output_top
     workdir.mkdir(parents=True, exist_ok=True)
@@ -107,24 +103,22 @@ def generate_small_group_of_files(output_top : pathlib.Path, larsoft_opts : dict
     # Loop through the fcl files and generate.  First file assumes no input.
     # Then, capture output as next input.
 
-    input_file = None
+    input_file = File(input_filename)
     sample_futures = []
     for i, fcl in enumerate(fcls):
-        # TODO: Could use a better fcl to output naming technique
         output = os.path.basename(fcl)
-        output = output.replace(".fcl", ".root")
-        absolute_output_file = workdir / pathlib.Path(output)
+        absolute_output_file = workdir / pathlib.Path("cafmakerjob_sbnd_sce_genie_and_fluxwgt.root")
+        print(f'Generating future for {absolute_output_file}...')
 
         # Generate the futures for the three indivudual components:
         # print(this_workdir)
         this_future = generate_single_sample(
             inputs = [
-                50,
                 fcl,
                 input_file,
             ],
             outputs = [
-                File(str(absolute_output_file))
+                File(absolute_output_file)
             ],
             stdout = str(workdir) + f"/larStage{i}.out",
             stderr = str(workdir) + f"/larStage{i}.err",
@@ -193,19 +187,12 @@ def main():
         "container"   : "/lus/grand/projects/neutrinoGPU/software/slf7.sif",
         "software"    : "sbndcode",
         "larsoft_top" : "/lus/grand/projects/neutrinoGPU/software/larsoft", 
-        "version"     : "v09_78_00",
+        "version"     : "v09_78_04",
         "qual"        : "e20:prof",
     }
 
     # What fcls to run, and in what order:
-    fcls = [
-        "fcls/prodoverlay_corsika_cosmics_proton_genie_rockbox_sce.fcl",
-        "fcls/g4_sce_dirt_filter_lite_wc.fcl",
-        "fcls/wirecell_sim_sp_sbnd.fcl",
-        "fcls/detsim_sce_lite_wc.fcl",
-        "fcls/reco1_sce_lite_wc2d.fcl",
-        "fcls/reco2_sce.fcl",
-    ]
+    fcls = [ "fcls/cafmakerjob_sbnd_sce_genie_and_fluxwgt.fcl" ]
 
     # Make these fcl paths absolute without hardcoding it:
     script_dir = os.path.dirname(os.path.realpath(__file__))
@@ -233,14 +220,25 @@ def main():
     print(config)
     parsl.clear()
     parsl.load(config)
-    
+
+    # TODO a bit fragile!
+    # create short hashes for file names so that parsl always looks in the same directory for a given file name
+    batch_size = 20
+    file_list = sorted(list(pathlib.Path('/lus/eagle/projects/neutrinoGPU/production-v09_78_04-fewernodes').glob("**/reco2*.root")))
+    file_batches = [file_list[i:i + batch_size] for i in range(0, len(file_list), batch_size)]
+    file_batches_str = [''.join(str(l)) for l in file_batches]
+    hash_names = [hashlib.shake_128(bytes(f, encoding='utf8')).hexdigest(16) for f in file_batches_str]
+
     futures = []
-    for i in range(32):
-        this_out_dir = output_dir / pathlib.Path(f"{100*(i//100):04d}") / pathlib.Path(f"subrun_{i:04d}")
-        futures.append(generate_small_group_of_files(
-            output_top = this_out_dir, 
+    for h, batch in zip(hash_names, file_batches):
+        this_out_dir = output_dir / pathlib.Path(f"subrun_{h}")
+        input_filenames = ' '.join([f'-s {str(fname)}' for fname in batch])
+        futures.append(generate_futures(
+            output_top   = this_out_dir, 
             larsoft_opts = larsoft_opts,
-            fcls = fcls)
+            fcls = fcls,
+            input_filename = input_filenames
+            )
         )
         
     print(list(f.result() for f in futures))
