@@ -20,7 +20,7 @@ def create_provider_by_hostname(user_opts):
             init_blocks     = 1,
             max_blocks      = 1,
             walltime        = user_opts["walltime"],
-            scheduler_options = '#PBS -l filesystems=home:grand:eagle',
+            scheduler_options = '#PBS -l filesystems=home:grand:eagle\n#PBS -l place=scatter',
             launcher        = MpiExecLauncher(bind_cmd="--cpu-bind"),
             worker_init     = "module load conda/2023-10-04.lua; conda activate; source /lus/grand/projects/neutrinoGPU/software/parsl-conda-2023-10-04/bin/activate",
         )
@@ -43,7 +43,7 @@ def create_executor_by_hostname(user_opts, provider):
                     cores_per_worker=1,
                     address=address_by_interface("bond0"),
                     address_probe_timeout=120,
-                    cpu_affinity="block",
+                    cpu_affinity="alternating",
                     prefetch_capacity=0,
                     provider=provider,
                     block_error_handler=False
