@@ -121,6 +121,10 @@ def build_parser():
     p.add_argument("--output-dir", "-o", type=pathlib.Path,
                    required=True,
                    help="Top level directory for output")
+
+    p.add_argument("--fcl-dir", "-f", type=pathlib.Path,
+                   required=True,
+                   help="Directory for fcl files")
                 
 
     return p

@@ -2,11 +2,7 @@ JOB_PRE = r'''
 echo "Job starting!"
 pwd
 date
-hostname
-echo "Current directory: "
-pwd
-echo "Current files: "
-ls'''
+hostname'''
 
 JOB_POST = r'''
 echo "Job finishing!"
@@ -20,9 +16,13 @@ hostname'''
 # execute a single fcl file in a container
 SINGLE_FCL_TEMPLATE = f'''
 {JOB_PRE}
+cd {{workdir}}
+echo "Current directory: "
+pwd
+echo "Current files: "
+ls
 echo "Move fcl."
 cp {{fhicl}} {{workdir}}/
-cd {{workdir}}
 export LOCAL_FCL=$(basename {{fhicl}})
 
 echo "Load singularity"
@@ -45,7 +45,6 @@ singularity run -B /lus/eagle/ -B /lus/grand/ {{container}} <<EOF
         export lar_cmd="\$lar_cmd --source {{input}} "
     fi
     echo "About to run larsoft"
-    echo \$lar_cmd
     lar \$lar_cmd
     set +e
 
