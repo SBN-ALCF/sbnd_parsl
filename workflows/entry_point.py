@@ -220,9 +220,9 @@ def main():
     # Next, set up the user options:
     user_opts = create_default_useropts(allocation="neutrinoGPU")
     user_opts["run_dir"] = f"{str(output_dir)}/runinfo"
-    user_opts["queue"] = "debug"
-    user_opts["walltime"] = "1:00:00"
-    user_opts["nodes_per_block"] = 1
+    user_opts["queue"] = "prod"
+    user_opts["walltime"] = "3:00:00"
+    user_opts["nodes_per_block"] = 10
     # to test hypterthreading
     # user_opts["cpus_per_node"] = 64
 
@@ -235,7 +235,7 @@ def main():
     parsl.load(config)
     
     futures = []
-    for i in range(32):
+    for i in range(1000):
         this_out_dir = output_dir / pathlib.Path(f"{100*(i//100):04d}") / pathlib.Path(f"subrun_{i:04d}")
         futures.append(generate_small_group_of_files(
             output_top = this_out_dir, 

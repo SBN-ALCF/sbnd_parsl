@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["sbnd_parsl"]
+
+[project]
+name = "sbnd_parsl"
+version = "1.0.0"
+description = "Parsl workflows and utilities for the SBND experiment"
+readme = "README.md"
+license = {file = "LICENSE"}
+
+requires-python = ">=3.8"
+dynamic = ["dependencies", "optional-dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
