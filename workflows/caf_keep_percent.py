@@ -6,6 +6,9 @@
 import sys, os
 import pathlib
 import argparse 
+from typing import Dict, List
+
+import numpy as np
 
 import parsl
 from parsl.app.app import bash_app
@@ -15,9 +18,11 @@ from parsl.utils import get_all_checkpoints
 from parsl.data_provider.files import File
 
 from sbnd_parsl.utils import create_default_useropts, create_parsl_config, build_parser
+from sbnd_parsl.templates import SINGLE_FCL_TEMPLATE
 
 
 FULL_KEEP_FRACTION = 0.1
+NSUBRUNS = 1
 SUBRUNS_PER_CAF = 20
 
 FCLS = {
@@ -46,23 +51,48 @@ LARSOFT_OPTS = {
 
 
 QUEUE_OPTS = {
-    "queue": "prod",
-    "walltime": "3:00:00",
-    "nodes_per_block": 10
+    "queue": "debug",
+    "walltime": "1:00:00",
+    "nodes_per_block": 1
 }
 
 
 @bash_app(cache=True)
-def generate_mc_sample():
-    pass
+def fcl_future(workdir, stdout, stderr, larsoft_opts, inputs=[], outputs=[]):
+    return SINGLE_FCL_TEMPLATE.format(
+        fhicl=inputs[0],
+        workdir='test',
+        # output=File(str(output_file)),
+        output=outputs[0],
+        input=inputs[1],
+        **LARSOFT_OPTS,
+    )
 
 
-@bash_app(cache=True)
-def generate_caf():
-    pass
+def generate_mc_sample(workdir: pathlib.Path, larsoft_opts: Dict, fcls: List):
+    input_file = None
+    last_future = None
+    workdir.mkdir(parents=True, exist_ok=True)
+
+    for i, fcl in enumerate(fcls):
+        output = os.path.basename(fcl).replace(".fcl", ".root")
+        output_file = workdir / pathlib.Path(output)
+        this_future = fcl_future(
+            workdir = str(workdir),
+            stdout = str(workdir / pathlib.Path(f"/larStage{i}.out")),
+            stderr = str(workdir / pathlib.Path(f"/larStage{i}.err")),
+            larsoft_opts = LARSOFT_OPTS,
+            inputs=[fcl, input_file],
+            outputs=[File(str(output_file))],
+        )
+        input_file = this_future.outputs[0]
+
+    # input file is set to the last future of this job
+    return input_file
 
 
-def generate_futures():
+# @bash_app(cache=True)
+def generate_caf(*args):
     pass
 
 
@@ -83,26 +113,27 @@ def main():
 
     config = create_parsl_config(user_opts)
     print(config)
-    sys.exit(1)
 
     parsl.clear()
     parsl.load(config)
     
     # create futures for MC files
-    nsubruns = 1000
     futures = []
-    for i in range(nsubruns):
+    for i in range(NSUBRUNS):
         this_out_dir = get_subrun_dir(output_dir, i)
         futures.append(generate_mc_sample(
-            output_top = this_out_dir, 
-            larsoft_opts = larsoft_opts,
+            workdir = this_out_dir, 
+            larsoft_opts = LARSOFT_OPTS,
             fcls = FCLS['mc'])
         )
+
+    print(list(f.result()for f in futures))
+    sys.exit(1)
 
     # create futures for CAF files
     batches = np.array_split(np.arange(nsubruns), SUBRUNS_PER_CAF)
     for b in batches:
-        inputs = [get_subrun_dir(output_dir, i) / FCLS['mc'][-1].replace(".fcl", ".root") for i in b]
+        inputs = [get_subrun_dir(output_dir, i) / os.path.basename(FCLS['mc'][-1]).replace(".fcl", ".root") for i in b]
         futures.append(generate_caf(inputs))
         
     print(list(f.result() for f in futures))
