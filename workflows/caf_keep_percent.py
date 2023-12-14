@@ -23,9 +23,9 @@ from sbnd_parsl.utils import create_default_useropts, create_parsl_config, build
 from sbnd_parsl.templates import SINGLE_FCL_TEMPLATE, CAF_TEMPLATE
 
 
-NSUBRUNS = 1
+NSUBRUNS = 640
 NEVENTS_PER_SUBRUN = 50
-SUBRUNS_PER_CAF = 20
+SUBRUNS_PER_CAF = 10
 FULL_KEEP_FRACTION = 0.1
 
 FCLS = {
@@ -54,9 +54,9 @@ LARSOFT_OPTS = {
 
 
 QUEUE_OPTS = {
-    "queue": "debug",
-    "walltime": "1:00:00",
-    "nodes_per_block": 1
+    "queue": "prod",
+    "walltime": "3:00:00",
+    "nodes_per_block": 10
 }
 
 
@@ -106,18 +106,24 @@ def generate_caf(workdir: pathlib.Path, larsoft_opts: Dict, fcl, inputs: List):
     stage of multiple MC futures.
     """
     workdir.mkdir(parents=True, exist_ok=True)
-
-    caf_input_arg = ' '.join([f'-s {str(pathlib.Path(fname.filepath, fname.filename))}' for fname in inputs])
+    caf_input_arg = ' '.join([f'-s {fname.filepath}' for fname in inputs])
     output = f"cafmakerjob_sbnd_sce_genie_and_fluxwgt.root"
     output_file = workdir / pathlib.Path(output)
     future_inputs = [fcl, caf_input_arg] + inputs
+
+    # make a hook to delete all but a certain fraction of the inputs
+    n_remove = int((1.0 - FULL_KEEP_FRACTION) * len(inputs))
+    # remove the first n_remove MC files...
+    rm_hook = '\n'.join([f'rm -f {pathlib.Path(f.filepath).parent}/*.root' for f in inputs[:n_remove]])
+    opts = LARSOFT_OPTS.copy()
+    opts['post_job_hook'] = rm_hook
 
     this_future = fcl_future(
         workdir = str(workdir),
         stdout = str(workdir / pathlib.Path("cafStage.out")),
         stderr = str(workdir / pathlib.Path("cafStage.err")),
         template = CAF_TEMPLATE,
-        larsoft_opts = LARSOFT_OPTS,
+        larsoft_opts = opts,
         inputs = future_inputs,
         outputs = [File(str(output_file))],
     )
@@ -160,7 +166,7 @@ def main():
     batches = [futures[i:i + SUBRUNS_PER_CAF] for i in range(0, len(futures), SUBRUNS_PER_CAF)]
 
     for b in batches:
-        files_str = ''.join([str(pathlib.Path(f.filepath, f.filename)) for f in b])
+        files_str = ''.join([f.filepath for f in b])
         hash_name = hashlib.shake_128(bytes(files_str, encoding='utf8')).hexdigest(16)
 
         this_out_dir = pathlib.Path(output_dir, 'caf', hash_name)

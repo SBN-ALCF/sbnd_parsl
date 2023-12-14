@@ -9,6 +9,7 @@ from parsl.utils import get_all_checkpoints
 from parsl.providers import PBSProProvider, LocalProvider
 from parsl.executors import HighThroughputExecutor, ThreadPoolExecutor
 from parsl.launchers import MpiExecLauncher, GnuParallelLauncher
+# from parsl.monitoring.monitoring import MonitoringHub
 
 
 def create_provider_by_hostname(user_opts):
@@ -104,7 +105,14 @@ def create_parsl_config(user_opts):
             retries=user_opts.get("retries", 0),
             app_cache=True,
     )
-    
+    '''
+    monitoring=MonitoringHub(
+        hub_address=address_by_interface('bond0'),
+        hub_port=55055,
+        monitoring_debug=False,
+        resource_monitoring_interval=10,
+    ),
+    '''
 
     return config
 

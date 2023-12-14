@@ -92,5 +92,6 @@ singularity run -B /lus/eagle/ -B /lus/grand/ {{container}} <<EOF
     rm -f RootOutput-*.root
     rm -f TFileService-*.root
 EOF
+{{post_job_hook}}
 {JOB_POST}
 '''
