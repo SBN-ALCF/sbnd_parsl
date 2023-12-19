@@ -122,7 +122,7 @@ def build_parser():
     p = argparse.ArgumentParser(description="Main entry script for simulating/reconstructing sbnd data.",
         formatter_class=argparse.RawDescriptionHelpFormatter)
     
-    p.add_argument("--events-per-file", "-e", type=int,
+    p.add_argument("--nevents-per-file", "-n", type=int,
                    default=25,
                    help="Number of nexus events per file")
 
@@ -133,6 +133,10 @@ def build_parser():
     p.add_argument("--fcl-dir", "-f", type=pathlib.Path,
                    required=True,
                    help="Directory for fcl files")
+
+    p.add_argument("--software-version", "-v", type=str,
+                   required=True,
+                   help="Software version string")
                 
 
     return p

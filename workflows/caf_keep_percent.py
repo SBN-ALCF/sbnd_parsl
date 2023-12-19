@@ -23,10 +23,10 @@ from sbnd_parsl.utils import create_default_useropts, create_parsl_config, build
 from sbnd_parsl.templates import SINGLE_FCL_TEMPLATE, CAF_TEMPLATE
 
 
-NSUBRUNS = 640
-NEVENTS_PER_SUBRUN = 50
-SUBRUNS_PER_CAF = 10
-FULL_KEEP_FRACTION = 0.1
+NSUBRUNS = 6400
+NEVENTS_PER_SUBRUN = 100
+SUBRUNS_PER_CAF = 50
+FULL_KEEP_FRACTION = 0.02
 
 FCLS = {
         'mc': [
@@ -55,8 +55,8 @@ LARSOFT_OPTS = {
 
 QUEUE_OPTS = {
     "queue": "prod",
-    "walltime": "3:00:00",
-    "nodes_per_block": 10
+    "walltime": "6:00:00",
+    "nodes_per_block": 50
 }
 
 
@@ -113,8 +113,16 @@ def generate_caf(workdir: pathlib.Path, larsoft_opts: Dict, fcl, inputs: List):
 
     # make a hook to delete all but a certain fraction of the inputs
     n_remove = int((1.0 - FULL_KEEP_FRACTION) * len(inputs))
-    # remove the first n_remove MC files...
-    rm_hook = '\n'.join([f'rm -f {pathlib.Path(f.filepath).parent}/*.root' for f in inputs[:n_remove]])
+
+    # remove all the ROOT files from the first n_remove MC files, except reco1!
+    mc_rm_filenames = [fcl.replace('.fcl', '.root') for fcl in FCLS['mc'] if not "reco1" in fcl]
+    rm_strs = []
+    for iput in inputs[:n_remove]:
+        for mc_fname in mc_rm_filenames:
+            rm_strs.append(f'rm -f {pathlib.Path(iput.filepath).parent}/{mc_fname}')
+
+    rm_hook = '\n'.join(rm_strs)
+
     opts = LARSOFT_OPTS.copy()
     opts['post_job_hook'] = rm_hook
 
@@ -140,6 +148,7 @@ def main():
     args = p.parse_args()
     output_dir = args.output_dir
     fcl_dir = args.fcl_dir
+    LARSOFT_OPTS['version'] = args.software_version
     output_dir.mkdir(parents=True, exist_ok=True)
 
     user_opts = create_default_useropts(allocation="neutrinoGPU")
