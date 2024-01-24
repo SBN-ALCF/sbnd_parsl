@@ -23,40 +23,40 @@ from sbnd_parsl.utils import create_default_useropts, create_parsl_config, build
 from sbnd_parsl.templates import SINGLE_FCL_TEMPLATE, CAF_TEMPLATE
 
 
-NSUBRUNS = 6400
-NEVENTS_PER_SUBRUN = 100
-SUBRUNS_PER_CAF = 50
-FULL_KEEP_FRACTION = 0.02
+NSUBRUNS = 64
+NEVENTS_PER_SUBRUN = 10
+SUBRUNS_PER_CAF = 16
+FULL_KEEP_FRACTION = 0.0625
 
 FCLS = {
         'mc': [
-            "prodoverlay_corsika_cosmics_proton_genie_rockbox_sce.fcl",
-            "g4_sce_dirt_filter_lite_wc.fcl",
-            "wirecell_sim_sp_sbnd.fcl",
-            "detsim_sce_lite_wc.fcl",
-            "reco1_sce_lite_wc2d.fcl",
-            "reco2_sce.fcl",
+            "prodcorsika_bnb_genie_protononly_icarus.fcl",
+            "standard_g4_icarus_sce_largeant.fcl",
+            "standard_g4_icarus_sce_ionization.fcl",
+            "detsim_2d_icarus.fcl",
+            "stage0_run2_icarus_mc.fcl",
+            "stage1_run2_icarus_MC.fcl",
         ],
         'caf': [
-            "cafmakerjob_sbnd_sce_genie_and_fluxwgt.fcl",
+            "cafmakerjob_icarus_detsim2d.fcl",
         ]
 }
 
 
 LARSOFT_OPTS = {
     "container": "/lus/grand/projects/neutrinoGPU/software/slf7.sif",
-    "software": "sbndcode",
+    "software": "icaruscode",
     "larsoft_top": "/lus/grand/projects/neutrinoGPU/software/larsoft", 
-    "version": "v09_78_00",
+    "version": "v09_78_04",
     "qual": "e20:prof",
     "nevts": NEVENTS_PER_SUBRUN
 }
 
 
 QUEUE_OPTS = {
-    "queue": "prod",
-    "walltime": "6:00:00",
-    "nodes_per_block": 50
+    "queue": "debug",
+    "walltime": "1:00:00",
+    "nodes_per_block": 1
 }
 
 
