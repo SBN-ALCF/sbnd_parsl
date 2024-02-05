@@ -44,9 +44,9 @@ FCLS = {
 
 
 LARSOFT_OPTS = {
-    "container": "/lus/grand/projects/neutrinoGPU/software/slf7.sif",
+    "container": "/grand/neutrinoGPU/software/slf7.sif",
     "software": "sbndcode",
-    "larsoft_top": "/lus/grand/projects/neutrinoGPU/software/larsoft", 
+    "larsoft_top": "/grand/neutrinoGPU/software/larsoft", 
     "version": "v09_78_00",
     "qual": "e20:prof",
     "nevts": NEVENTS_PER_SUBRUN
