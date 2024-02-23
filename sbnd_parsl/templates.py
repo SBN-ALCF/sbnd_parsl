@@ -25,6 +25,7 @@ echo "Move fcl."
 cp {{fhicl}} {{workdir}}/
 export LOCAL_FCL=$(basename {{fhicl}})
 
+{{pre_job_hook}}
 echo "Load singularity"
 module load singularity
 set -e
@@ -33,13 +34,14 @@ singularity run -B /lus/eagle/ -B /lus/grand/ {{container}} <<EOF
     pwd
     echo "Sourcing products area"
     #setup SBNDCODE:
+    export EXPERIMENT={{experiment}}
     source {{larsoft_top}}/setup
     setup {{software}} {{version}} -q {{qual}}
     echo "Products setup!"
     # get the fcls
     set -e
     # Add an optional input file:
-    export lar_cmd="-c $LOCAL_FCL --nevts {{nevts}} --output {{output}}"
+    export lar_cmd="-c $LOCAL_FCL --nevts {{nevts}} --output {{output}} {{lar_args}}"
     if [ -f {{input}} ]; then
         export lar_cmd="\$lar_cmd --source {{input}} "
     fi
@@ -52,6 +54,7 @@ singularity run -B /lus/eagle/ -B /lus/grand/ {{container}} <<EOF
     rm -f RootOutput-*.root
     rm -f TFileService-*.root
 EOF
+{{post_job_hook}}
 {JOB_POST}
 '''
 
@@ -67,6 +70,7 @@ echo "Move fcl."
 cp {{fhicl}} {{workdir}}/
 export LOCAL_FCL=$(basename {{fhicl}})
 
+{{pre_job_hook}}
 echo "Load singularity"
 module load singularity
 set -e
@@ -75,6 +79,7 @@ singularity run -B /lus/eagle/ -B /lus/grand/ {{container}} <<EOF
     pwd
     echo "Sourcing products area"
     #setup SBNDCODE:
+    export EXPERIMENT={{experiment}}
     source {{larsoft_top}}/setup
     setup {{software}} {{version}} -q {{qual}}
     setup sbndata v01_05
@@ -82,7 +87,7 @@ singularity run -B /lus/eagle/ -B /lus/grand/ {{container}} <<EOF
     # get the fcls
     set -e
     # Add an optional input file:
-    export lar_cmd="-c $LOCAL_FCL --output {{output}} {{input}}"
+    export lar_cmd="-c $LOCAL_FCL {{lar_args}} {{input}}"
     echo \$lar_cmd
     echo "About to run larsoft"
     lar \$lar_cmd

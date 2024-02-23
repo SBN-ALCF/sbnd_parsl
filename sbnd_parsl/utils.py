@@ -1,6 +1,6 @@
 import socket
-import argparse
 import pathlib
+import hashlib
 
 from parsl.config import Config
 
@@ -62,7 +62,7 @@ def create_executor_by_hostname(user_opts, provider):
         )
     
 
-def create_default_useropts(allocation="datascience"):
+def create_default_useropts(**kwargs):
     hostname = socket.gethostname()
 
     if 'polaris' in hostname:
@@ -71,14 +71,13 @@ def create_default_useropts(allocation="datascience"):
             # Node setup: activate necessary conda environment and such.
             'worker_init': '',
             'scheduler_options': '',
-            'allocation': allocation,
+            'allocation': 'neutrinoGPU',
             'queue': 'debug',
             'walltime': '1:00:00',
             'nodes_per_block' : 1,
             'cpus_per_node' : 32,
             'strategy' : 'simple',
         }
-    
     else:
         # We're likely running locally
         user_opts = {
@@ -86,6 +85,7 @@ def create_default_useropts(allocation="datascience"):
             'strategy' : 'simple',
         }
 
+    user_opts.update(**kwargs)
 
     return user_opts
 
@@ -106,6 +106,7 @@ def create_parsl_config(user_opts):
             app_cache=True,
     )
     '''
+    # TODO: Not working yet
     monitoring=MonitoringHub(
         hub_address=address_by_interface('bond0'),
         hub_port=55055,
@@ -117,26 +118,7 @@ def create_parsl_config(user_opts):
     return config
 
 
-def build_parser():
-    # Make parser object
-    p = argparse.ArgumentParser(description="Main entry script for simulating/reconstructing sbnd data.",
-        formatter_class=argparse.RawDescriptionHelpFormatter)
-    
-    p.add_argument("--nevents-per-file", "-n", type=int,
-                   default=25,
-                   help="Number of nexus events per file")
-
-    p.add_argument("--output-dir", "-o", type=pathlib.Path,
-                   required=True,
-                   help="Top level directory for output")
-
-    p.add_argument("--fcl-dir", "-f", type=pathlib.Path,
-                   required=True,
-                   help="Directory for fcl files")
-
-    p.add_argument("--software-version", "-v", type=str,
-                   required=True,
-                   help="Software version string")
-                
-
-    return p
+def hash_name(string: str) -> str:
+    ''' create something that looks like abcd-abcd-abcd-abcd from a string '''
+    strhash = hashlib.shake_128(bytes(string, encoding='utf8')).hexdigest(16)
+    return '-'.join(strhash[i*4:i*4+4] for i in range(4))

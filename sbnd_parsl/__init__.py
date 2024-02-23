@@ -1,5 +1,7 @@
 import os
 
+from .metadata import MetadataGenerator
+
 
 from parsl.data_provider.files import File
 from parsl.dataflow.memoization import id_for_memo
@@ -20,3 +22,4 @@ def id_for_memo_File(f, output_ref=False):
             return [f.url, stat_result.st_size, stat_result.st_mtime]
         except:
             return [f.url, 0, 0]
+
