@@ -241,7 +241,11 @@ def main(settings: json):
 
     # flatten the list
     futures = [ele for l in futures for ele in l]
-    print('\n'.join([f.result().filepath for f in futures]))
+    for f in futures:
+        try:
+            print(f.result())
+        except Exception as e:
+            print('FAILED {f.filepath}')
 
 
 if __name__ == '__main__':

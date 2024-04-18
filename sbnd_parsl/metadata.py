@@ -27,15 +27,18 @@ class MetadataGenerator:
         "cafname": "caf",
     }
 
-    def __init__(self, settings: Dict, fclnames: Dict, exe=POMS_EXE):
+    def __init__(self, settings: Dict, fclnames: Dict, exe=POMS_EXE, defer_check=False):
+        # allow constructor to defer check for exe. This allows us to generate
+        # metadata commands without modifying our local PATH, but we have to make
+        # sure to modify PATH by the time the command actually runs
         path = shutil.which(exe)
-        if path is None:
+        if path is None and not defer_check:
             raise RuntimeError(f"Could not find {exe} in $PATH.")
 
         if len(fclnames) == 0:
             raise ValueError("Need to provide at least one stagename and corresponding fcl filename")
         self.metadata = MetadataGenerator.defaults.copy()
-        self.metadata.update(settings.get('metadata', {}))
+        self.metadata.update(settings)
         self.fclnames = fclnames
 
         # project name is the first fcl in the chain

@@ -186,7 +186,11 @@ def main():
             inputs = b)
         )
         
-    print(list(f.result() for f in futures))
+    for f in futures:
+        try:
+            print(f.result())
+        except Exception as e:
+            print('FAILED {f.filepath}')
 
 
 if __name__ == '__main__':

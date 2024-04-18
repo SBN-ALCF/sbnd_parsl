@@ -29,7 +29,7 @@ export LOCAL_FCL=$(basename {{fhicl}})
 echo "Load singularity"
 module load singularity
 set -e
-singularity run -B /lus/eagle/ -B /lus/grand/ {{container}} <<EOF
+singularity run -B /lus/eagle/ -B /grand/ {{container}} <<EOF
     echo "Running in: "
     pwd
     echo "Sourcing products area"
@@ -94,8 +94,9 @@ singularity run -B /lus/eagle/ -B /lus/grand/ {{container}} <<EOF
     set +e
 
     # Clean up temporary files, if they exist:
-    rm -f RootOutput-*.root
-    rm -f TFileService-*.root
+    # note: cleanup can cause art to crash, since art tries to clean up too...
+    # rm -f RootOutput-*.root
+    # rm -f TFileService-*.root
 EOF
 {{post_job_hook}}
 {JOB_POST}

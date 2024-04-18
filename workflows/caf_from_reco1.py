@@ -1,12 +1,13 @@
 #!/usr/bin/env python
 
-# This workflow generates full MC events, creates a CAF file from the events,
-# then deletes the intermediate output files while saving a certain fraction
+# Variation of detsys workflow to re-process reco1 files
 
 import sys, os
 import json
 import pathlib
 from typing import Dict, List
+
+import numpy as np
 
 import parsl
 from parsl.app.app import bash_app
@@ -17,7 +18,6 @@ from sbnd_parsl.utils import create_default_useropts, create_parsl_config, \
 from sbnd_parsl.metadata import MetadataGenerator
 from sbnd_parsl.templates import SINGLE_FCL_TEMPLATE, CAF_TEMPLATE
 
-UNIQUE_RUN_NUMBER = 0
 
 @bash_app(cache=True)
 def fcl_future(workdir, stdout, stderr, template, larsoft_opts, inputs=[], outputs=[], pre_job_hook='', post_job_hook=''):
@@ -33,47 +33,38 @@ def fcl_future(workdir, stdout, stderr, template, larsoft_opts, inputs=[], outpu
     )
 
 
-def generate_mc_sample(workdir: pathlib.Path, larsoft_opts: Dict, fcls: List, mg: MetadataGenerator):
+def generate_from_reco1(workdir: pathlib.Path, reco1_filename: str, larsoft_opts: Dict, fcl_dir: pathlib.Path, fcls: Dict, mg: MetadataGenerator):
     """
-    Create a future for each fcl output required to produce a fully-simulated &
-    reconstructed MC file
+    Create an MC sample from a reco1 file by scrub, then do all other fcl
+    steps for each g4 variation
     """
-    global UNIQUE_RUN_NUMBER
-    UNIQUE_RUN_NUMBER += 1 
-    run_number = 1 + (UNIQUE_RUN_NUMBER // 100)
-    subrun_number = UNIQUE_RUN_NUMBER % 100
 
-    input_file = None
-    last_future = None
     workdir.mkdir(parents=True, exist_ok=True)
 
+    workdir.mkdir(parents=True, exist_ok=True)
+    rest_fcls = [fcls[key] for key in ['reco2']] 
+    fcl_offset = list(fcls.keys()).index('reco2')
 
+    input_file = reco1_filename
 
-    for i, fcl in enumerate(fcls):
-        # mg_cmd = f'PATH={larsoft_opts["larsoft_top"]}/sbndutil/{larsoft_opts["version"]}/bin:$PATH {mg.run_cmd(os.path.basename(fcl), check_exists=False)}'
-        mg_cmd = ''
-        if i == 0:
-            mg_cmd = '\n'.join([mg_cmd,
-                f'echo "source.firstRun: {run_number}" >> {os.path.basename(fcl)}',
-                f'echo "source.firstSubRun: {subrun_number}" >> {os.path.basename(fcl)}'
-            ])
+    # use i + 1 so generator is still larStage0, g4 is still larStage1, etc.
+    for i, fcl in enumerate(rest_fcls):
+        mg_cmd = f'PATH={larsoft_opts["larsoft_top"]}/sbndutil/{larsoft_opts["version"]}/bin:$PATH {mg.run_cmd(os.path.basename(fcl), check_exists=False)}'
         output = os.path.basename(fcl).replace(".fcl", ".root")
-        output_file = workdir / pathlib.Path(output)
+        output_file = File(str(workdir / pathlib.Path(output)))
         this_future = fcl_future(
             workdir = str(workdir),
-            stdout = str(workdir / pathlib.Path(f"larStage{i}.out")),
-            stderr = str(workdir / pathlib.Path(f"larStage{i}.err")),
+            stdout = str(workdir / pathlib.Path(f"larStage{fcl_offset + i}.out")),
+            stderr = str(workdir / pathlib.Path(f"larStage{fcl_offset + i}.err")),
             template = SINGLE_FCL_TEMPLATE,
             larsoft_opts = larsoft_opts,
-            inputs=[fcl, input_file],
-            outputs=[File(str(output_file))],
+            inputs=[str(fcl_dir / pathlib.Path(fcl)), input_file],
+            outputs=[output_file],
             pre_job_hook = mg_cmd
         )
         input_file = this_future.outputs[0]
-        last_future = this_future.outputs[0]
 
-    # input file is set to the last future of this job
-    return last_future
+    return input_file
 
 
 def generate_caf(workdir: pathlib.Path, larsoft_opts: Dict, fcl, inputs: List, post_job_hook: str, mg: MetadataGenerator):
@@ -83,17 +74,14 @@ def generate_caf(workdir: pathlib.Path, larsoft_opts: Dict, fcl, inputs: List, p
     """
     workdir.mkdir(parents=True, exist_ok=True)
     caf_input_arg = ' '.join([f'-s {fname.filepath}' for fname in inputs])
-    # TODO standard input name?
-    output = os.path.basename(inputs[0].filepath).replace('.root', '.flat.caf.root')
+    output = f"reco2_sce.flat.caf.root"
     output_file = workdir / pathlib.Path(output)
     future_inputs = [fcl, caf_input_arg] + inputs
-    # mg_cmd = f'PATH={larsoft_opts["larsoft_top"]}/sbndutil/{larsoft_opts["version"]}/bin:$PATH {mg.run_cmd(os.path.basename(fcl), check_exists=False)}'
-    mg_cmd = ''
+    mg_cmd = f'PATH={larsoft_opts["larsoft_top"]}/sbndutil/{larsoft_opts["version"]}/bin:$PATH {mg.run_cmd(os.path.basename(fcl), check_exists=False)}'
 
     opts = larsoft_opts.copy()
     opts['lar_args'] = "--sam-data-tier caf"
 
-    # use post_job_hook to clean up
     this_future = fcl_future(
         workdir = str(workdir),
         stdout = str(workdir / pathlib.Path("cafStage.out")),
@@ -102,8 +90,8 @@ def generate_caf(workdir: pathlib.Path, larsoft_opts: Dict, fcl, inputs: List, p
         larsoft_opts = opts,
         inputs = future_inputs,
         outputs = [File(str(output_file))],
-        pre_job_hook = mg_cmd,
-        post_job_hook = post_job_hook
+        pre_job_hook=mg_cmd,
+        post_job_hook=post_job_hook
     )
 
     return this_future.outputs[0]
@@ -127,20 +115,23 @@ def cleanup_caf_inputs(subruns_per_caf: int, full_keep_frac: float, inputs: List
     return '\n'.join(rm_strs)
 
 
-def get_subrun_dir(prefix: pathlib.Path, subrun: int):
-    return prefix / pathlib.Path(f"{100*(subrun//100):04d}") / pathlib.Path(f"subrun_{subrun:04d}")
-
-
 def main(settings: json):
+    input_dir = pathlib.Path(settings['workflow']['reco1_dir'])
+    if not input_dir.is_dir() or not input_dir.exists():
+        print(f"Directory {input_dir} is not a valid directory")
+        sys.exit(1)
+
+    # create futures for each reco1 file
+    reco1_files = sorted(list(input_dir.glob("**/reco1*.root")))
+    print(f"Found {len(reco1_files)} files.")
+
     output_dir = pathlib.Path(settings['run']['output'])
     output_dir.mkdir(parents=True, exist_ok=True)
 
     fcl_dir = pathlib.Path(settings['run']['fclpath'])
-    nsubruns = settings['run']['nsubruns']
 
     user_opts = create_default_useropts()
     user_opts.update(settings['queue'])
-
     user_opts["run_dir"] = f"{str(output_dir)}/runinfo"
     print(user_opts)
 
@@ -150,36 +141,41 @@ def main(settings: json):
     larsoft_opts = settings['larsoft']
     fcls = settings['fcls']
     workflow_opts = settings['workflow']
-    mc_meta = MetadataGenerator(settings['metadata'], fcls, defer_check=True)
 
     futures = []
     parsl.clear()
     parsl.load(config)
-    
-    # unpack the fcl list to remove stage name
-    mc_fcls = [fcl for stage, fcl in fcls.items() if stage != 'caf']
-    # create futures for MC files
-    for i in range(nsubruns):
-        this_out_dir = get_subrun_dir(output_dir, i)
+
+    subruns_per_caf = workflow_opts['subruns_per_caf']
+    full_keep_fraction = workflow_opts['subruns_per_caf']
+
+    mc_meta = MetadataGenerator(settings['metadata'], fcls)
+    for i, f in enumerate(reco1_files):
+        # remove base path from input file but preserve the structure
+        this_out_dir = output_dir / f.relative_to(input_dir).parent
         futures.append(
-            generate_mc_sample(
-                workdir=this_out_dir, 
+            generate_from_reco1(
+                workdir=this_out_dir,
+                reco1_filename=str(f),
                 larsoft_opts=larsoft_opts,
-                fcls=[str(fcl_dir / pathlib.Path(fcl)) for fcl in mc_fcls],
+                fcl_dir=fcl_dir,
+                fcls=fcls,
                 mg=mc_meta
             )
         )
+        # if i > 64:
+        #     break
 
-    print(f'Submitted {len(futures)} future.')
     subruns_per_caf = workflow_opts['subruns_per_caf']
     batches = [futures[i:i + subruns_per_caf] for i in range(0, len(futures), subruns_per_caf)]
 
+    mc_fcls = [fcl for stage, fcl in fcls.items() if stage != 'caf']
     for b in batches:
         files_str = ''.join([f.filepath for f in b])
         caf_name = hash_name(files_str)
-
-        rm_hook = cleanup_caf_inputs(workflow_opts['subruns_per_caf'], workflow_opts['full_keep_fraction'], b, mc_fcls)
+        rm_hook = cleanup_caf_inputs(subruns_per_caf, full_keep_fraction, b, mc_fcls)
         this_out_dir = pathlib.Path(output_dir, 'caf', caf_name)
+
         futures.append(
             generate_caf(
                 workdir=this_out_dir,
@@ -190,7 +186,7 @@ def main(settings: json):
                 mg=mc_meta
             )
         )
-        
+    
     for f in futures:
         try:
             print(f.result())
