@@ -41,7 +41,6 @@ def generate_from_reco1(workdir: pathlib.Path, reco1_filename: str, larsoft_opts
 
     workdir.mkdir(parents=True, exist_ok=True)
 
-    workdir.mkdir(parents=True, exist_ok=True)
     rest_fcls = [fcls[key] for key in ['reco2']] 
     fcl_offset = list(fcls.keys()).index('reco2')
 
@@ -144,7 +143,9 @@ def main(settings: json):
     fcl_dir = pathlib.Path(settings['run']['fclpath'])
     fcls = settings['fcls']
     mc_meta = MetadataGenerator(settings['metadata'], fcls, defer_check=True)
-    g4_fcls = fcls['g4']
+
+    var_key = 'detsim'
+    g4_fcls = fcls[var_key]
 
     all_futures = []
     for g4_fcl in g4_fcls:
@@ -173,7 +174,7 @@ def main(settings: json):
 
         batches = [futures[i:i + subruns_per_caf] for i in range(0, len(futures), subruns_per_caf)]
 
-        mc_fcls = [g4_fcl] + [fcl for key, fcl in fcls.items() if not key in ('scrub', 'g4')]
+        mc_fcls = [g4_fcl] + [fcl for key, fcl in fcls.items() if not key in ('scrub', var_key)]
         for b in batches:
             files_str = ''.join([f.filepath for f in b])
             caf_name = hash_name(files_str)

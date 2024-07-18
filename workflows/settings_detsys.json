@@ -12,8 +12,8 @@
         "container": "/lus/grand/projects/neutrinoGPU/software/slf7.sif",
         "software": "sbndcode",
         "larsoft_top": "/lus/grand/projects/neutrinoGPU/software/larsoft", 
-        "version": "v09_78_04",
-        "qual": "e20:prof",
+        "version": "v09_88_00_04",
+        "qual": "e26:prof",
         "nevts": -1,
         "experiment": "sbnd",
         "lar_args" : ""

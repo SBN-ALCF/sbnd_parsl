@@ -47,11 +47,8 @@ def generate_mc_sample(workdir: pathlib.Path, larsoft_opts: Dict, fcls: List, mg
     last_future = None
     workdir.mkdir(parents=True, exist_ok=True)
 
-
-
     for i, fcl in enumerate(fcls):
-        # mg_cmd = f'PATH={larsoft_opts["larsoft_top"]}/sbndutil/{larsoft_opts["version"]}/bin:$PATH {mg.run_cmd(os.path.basename(fcl), check_exists=False)}'
-        mg_cmd = ''
+        mg_cmd = f'PATH={larsoft_opts["larsoft_top"]}/sbndutil/{larsoft_opts["version"]}/bin:$PATH {mg.run_cmd(os.path.basename(fcl), check_exists=False)}'
         if i == 0:
             mg_cmd = '\n'.join([mg_cmd,
                 f'echo "source.firstRun: {run_number}" >> {os.path.basename(fcl)}',
@@ -87,8 +84,7 @@ def generate_caf(workdir: pathlib.Path, larsoft_opts: Dict, fcl, inputs: List, p
     output = os.path.basename(inputs[0].filepath).replace('.root', '.flat.caf.root')
     output_file = workdir / pathlib.Path(output)
     future_inputs = [fcl, caf_input_arg] + inputs
-    # mg_cmd = f'PATH={larsoft_opts["larsoft_top"]}/sbndutil/{larsoft_opts["version"]}/bin:$PATH {mg.run_cmd(os.path.basename(fcl), check_exists=False)}'
-    mg_cmd = ''
+    mg_cmd = f'PATH={larsoft_opts["larsoft_top"]}/sbndutil/{larsoft_opts["version"]}/bin:$PATH {mg.run_cmd(os.path.basename(fcl), check_exists=False)}'
 
     opts = larsoft_opts.copy()
     opts['lar_args'] = "--sam-data-tier caf"
@@ -128,7 +124,8 @@ def cleanup_caf_inputs(subruns_per_caf: int, full_keep_frac: float, inputs: List
 
 
 def get_subrun_dir(prefix: pathlib.Path, subrun: int):
-    return prefix / pathlib.Path(f"{100*(subrun//100):04d}") / pathlib.Path(f"subrun_{subrun:04d}")
+    ''' create directory structure like XX00/XXXX '''
+    return prefix / pathlib.Path(f"{100*(subrun//100):06d}") / pathlib.Path(f"subrun_{subrun:06d}")
 
 
 def main(settings: json):
@@ -195,7 +192,7 @@ def main(settings: json):
         try:
             print(f.result())
         except Exception as e:
-            print('FAILED {f.filepath}')
+            print(f'FAILED {f.filepath}')
 
 
 if __name__ == '__main__':

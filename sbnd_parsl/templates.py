@@ -27,7 +27,8 @@ export LOCAL_FCL=$(basename {{fhicl}})
 
 {{pre_job_hook}}
 echo "Load singularity"
-module load singularity
+module use /soft/spack/gcc/0.6.1/install/modulefiles/Core
+module load apptainer
 set -e
 singularity run -B /lus/eagle/ -B /grand/ {{container}} <<EOF
     echo "Running in: "
@@ -72,9 +73,10 @@ export LOCAL_FCL=$(basename {{fhicl}})
 
 {{pre_job_hook}}
 echo "Load singularity"
-module load singularity
+module use /soft/spack/gcc/0.6.1/install/modulefiles/Core
+module load apptainer
 set -e
-singularity run -B /lus/eagle/ -B /lus/grand/ {{container}} <<EOF
+singularity run -B /lus/eagle/ -B /grand/ {{container}} <<EOF
     echo "Running in: "
     pwd
     echo "Sourcing products area"

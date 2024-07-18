@@ -6,7 +6,7 @@ import pathlib
 import subprocess
 from typing import List, Dict
 
-POMS_EXE="sbndpoms_metadata_injector.sh"
+POMS_EXE = "sbndpoms_metadata_injector.sh"
 
 class MetadataGenerator:
     defaults = {
