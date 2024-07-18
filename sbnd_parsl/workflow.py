@@ -24,100 +24,104 @@ These classes implement this structure and generate jobs based on what you have
 and what you want, automatically filling in intermediate steps as needed.
 """
 
+import os
 from enum import Enum, auto
 from pathlib import Path
-from typing import List, Dict
+from typing import List, Dict, Optional, Callable
 
-# from parsl.data_provider.files import File
 
 class NoInputFileException(Exception):
     pass
 
+
 class NoFclFileException(Exception):
     pass
 
+
+'''
 class StageType(Enum):
-    # EMPTY = auto()
     GEN = auto()
     G4 = auto()
     DETSIM = auto()
     RECO1 = auto()
     RECO2 = auto()
-    # RAW = auto()
     DECODE = auto()
     CAF = auto()
     SCRUB = auto()
+'''
 
 
-# @bash_app(cache=True)
-# def future(bash_script, inputs=[], outputs=[]):
-#     """ Return formatted bash script which produces each future when executed """
-#     return bash_script
+class StageType(Enum):
+    GEN = 'gen'
+    G4 = 'g4'
+    DETSIM = 'detsim'
+    RECO1 = 'reco1'
+    RECO2 = 'reco2'
+    DECODE = 'decode'
+    CAF = 'caf'
+    SCRUB = 'scrub'
+    EMPTY = 'empty'
+
+
+# def str2stagetype(s: str) -> StageType:
+#     result = StageType.EMPTY
+#     for m in StageType.__members__.values():
+#         if m.value == s:
+#             return m
+#     return result
+
 
 class Stage:
-    def __init__(self, stage_type: StageType, fcl: str=''):
+    def __init__(self, stage_type: StageType, fcl: Optional[str]=None, runfunc: Callable=None):
         self._stage_type: StageType = stage_type
         self.fcl = fcl
+        self.run_dir = None
+        self.runfunc = runfunc
 
+        self._input_files = []
         self._output_files = None
         self._ancestors = {}
-        self._input_filenames = []
 
     @property
-    def stage_type(self):
+    def stage_type(self) -> StageType:
         return self._stage_type
 
     @property
-    def output_files(self):
+    def output_files(self) -> List[str]:
         if self._output_files is None:
             self.run()
         return self._output_files
 
     @property
-    def ancestors(self):
+    def ancestors(self) -> Dict:
         return self._ancestors
 
-    def complete(self):
+    def complete(self) -> bool:
         return self._output_files is not None
 
-    def add_input_file(self, filename):
-        self._input_filenames.append(filename)
+    def add_input_file(self, file) -> None:
+        self._input_files.append(file)
 
-    def dryrun(self):
-        '''
-        produces the output file for this stage. recurse through previous
-        stages if necessary
-        '''
-        if self.fcl == '':
+    def run(self) -> None:
+        """Produces the output file for this stage."""
+        if self.fcl is None:
             raise NoFclFileException(f'Attempt to run stage {self._stage_type} with no fcl provided and no default')
 
-        input_file_arg_str = '' 
         if self._stage_type in [StageType.GEN]:
             # these stages have no input files, do nothing for now
             pass
         else:
-            if len(self._input_filenames) == 0:
+            if len(self._input_files) == 0:
                 raise NoInputFileException(f'Tried to run stage of type {self._stage_type} which requires at least one input file, but it was not set.')
-            input_file_arg_str = \
-                ' '.join([f'-s {file}' for file in self._input_filenames])
 
-        output_file_arg_str = f'--output {self._stage_type}test.root'
-        print(f'lar -c {self.fcl} {input_file_arg_str} {output_file_arg_str}')
-        self._output_files = [f'{self._stage_type}test.root']
-        # lar -c self._fcl -s parent_file --output next_filename
+        self._output_files = self.runfunc(self.fcl, self._input_files, self.run_dir)
 
-    def run(self):
-        # if dryrun doesn't crash then submit futures
-        self.dryrun()
-        
-    def clean(self):
-        ''' delete the output file on disk '''
+    def clean(self) -> None:
+        """Delete the output file on disk."""
         self._output_files = None
 
-    def add_ancestors(self, stages):
-        '''
-        Add an ancestry stage to this one.
-        '''
+    def add_ancestors(self, stages: List) -> None:
+        """Add a list of known prior stages (ancestors) to this one."""
         for s in stages:
             try: 
                 self._ancestors[s.stage_type] += s
@@ -126,31 +130,60 @@ class Stage:
 
 
 class Workflow:
-    '''
-    collection of stages and order to run the stages
+    """
+    Collection of stages and order to run the stages
     fills in the gaps between inputs and outputs
-    '''
-    def __init__(self, stage_order: List[StageType], default_fcls: Dict):
+
+    """
+
+    @staticmethod
+    def default_runfunc(fcl, input_files, output_dir) -> List[Path]:
+        """Default function called when each stage is run."""
+        input_file_arg_str = \
+            ' '.join([f'-s {str(file)}' for file in input_files])
+
+        output_filename = os.path.basename(fcl).replace(".fcl", ".root")
+        output_file = output_dir / Path(output_filename)
+        output_file_arg_str = f'--output {str(output_file)}'
+        print(f'lar -c {fcl} {input_file_arg_str} {output_file_arg_str}')
+        return [output_file]
+
+    def __init__(self, stage_order: List[StageType], default_fcls: Dict, run_dir: Path=Path(), runfunc: Callable=None):
         self._stage_order = stage_order
         self._default_fcls = default_fcls
         self._stages = []
+        self._run_dir = run_dir
+        self._default_runfunc = runfunc
+        if self._default_runfunc is None:
+            self._default_runfunc = Workflow.default_runfunc
 
     def add_final_stage(self, stage: Stage):
-        '''
-        Add the final stage to a workflow
-        '''
+        """Add the final stage to a workflow."""
         self._stages.append(stage)
 
     def run(self):
+        """Run all stages in the workflow."""
         for s in self._stages:
+            print('running stage')
             self.run_stage(s)
 
     def run_stage(self, stage: Stage):
-        if stage.complete():
-            return
+        """Run an individual stage, recursing to parent stages as necessary."""
+        # if stage.complete():
+        #     return
 
-        if stage.fcl == '':
-            stage.fcl = self._default_fcls[stage.stage_type]
+        # fill any un-specified components with workflow defaults
+        if stage.fcl is None:
+            try:
+                stage.fcl = self._default_fcls[stage.stage_type]
+            except KeyError:
+                # also OK if user provided string version of StageType instead of the enum type
+                stage.fcl = self._default_fcls[stage.stage_type.value]
+
+        if stage.run_dir is None:
+            stage.run_dir = self._run_dir
+        if stage.runfunc is None:
+            stage.runfunc = self._default_runfunc
 
         # stages with no parent
         if stage.stage_type in [StageType.DECODE, StageType.SCRUB, StageType.GEN]:
@@ -163,12 +196,15 @@ class Workflow:
         # assume user wants us to build the ancestry map if the parent type doesn't exist
         if parent_type not in stage.ancestors:
             parent_stage = Stage(parent_type)
+            # inherit run dir and runfunc for any created stages
+            parent_stage.run_dir = stage.run_dir
+            parent_stage.runfunc = stage.runfunc
 
             # copy over the known ancestors to this stage too
             for a in stage.ancestors.values():
                 parent_stage.add_ancestors(a)
 
-            self.run_stage(parent_stage)
+            # self.run_stage(parent_stage)
             stage.add_ancestors([parent_stage])
 
         for a in stage.ancestors[parent_type]:
@@ -180,12 +216,12 @@ class Workflow:
 
 
 if __name__ == '__main__':
-    # describe what you want... and what you have
-    # e.g. 200 reco2 files from scrub reco1 files
-    # e.g. 10 caf files from 200 reco2 files
+    # describe what you have and what you want
+    # below we state that we want some reco2 files. The inputs are scrubbed
+    # reco1 files, and they should be processed with a special fcl at the g4
+    # stage. We define the workflow stage order, and provide some defaults
 
-    # stage_order = (StageType.SCRUB, StageType.G4, StageType.DETSIM, StageType.RECO1, StageType.RECO2)
-    stage_order = (StageType.GEN, StageType.G4, StageType.DETSIM, StageType.RECO1, StageType.RECO2)
+    stage_order = (StageType.SCRUB, StageType.G4, StageType.DETSIM, StageType.RECO1, StageType.RECO2)
     default_fcls = {
         StageType.GEN: 'gen.fcl',
         StageType.SCRUB: 'scrub.fcl',
@@ -194,18 +230,18 @@ if __name__ == '__main__':
         StageType.RECO1: 'reco1.fcl',
         StageType.RECO2: 'reco2.fcl',
     }
-    wf = Workflow(stage_order, default_fcls)
+    wf = Workflow(stage_order, default_fcls, run_dir='../')
 
     for i in range(10):
         # define your inputs
-        # s1 = Stage(StageType.SCRUB)
-        # s1.add_input_file(f'reco1{i}.root')
-        # s2 = Stage(StageType.G4, fcl='override.fcl')
-        # s2.add_ancestors([s1])
+        s1 = Stage(StageType.SCRUB)
+        s1.add_input_file(f'reco1_{i:02d}.root')
+        s2 = Stage(StageType.G4, fcl='override.fcl')
+        s2.add_ancestors([s1])
 
         # assign them to your final stage. OK to leave gaps
         s3 = Stage(StageType.RECO2)
-        # s3.add_ancestors([s2])
+        s3.add_ancestors([s2])
 
         # add final stage to the workflow. Workflow will fill in any gaps using
         # the order and default fcls

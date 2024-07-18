@@ -1,6 +1,7 @@
 import os
 
 from .metadata import MetadataGenerator
+from .workflow import StageType, Stage, Workflow
 
 
 from parsl.data_provider.files import File
