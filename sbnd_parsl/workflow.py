@@ -139,15 +139,16 @@ class Workflow:
         print(f'lar -c {fcl} {input_file_arg_str} {output_file_arg_str}')
         return [output_file]
 
-    def __init__(self, stage_order: List[StageType], default_fcls: Dict, run_dir: Path=Path(), runfunc: Callable=None):
+    def __init__(self, stage_order: List[StageType], default_fcls: Optional[Dict]=None, run_dir: Path=Path(), runfunc: Optional[Callable]=None):
         self._stage_order = stage_order
 
         self._default_fcls = {}
-        for k, v in default_fcls.items():
-            if not isinstance(k, StageType):
-                self._default_fcls[StageType.from_str(k)] = v
-            else:
-                self._default_fcls[k] = v
+        if default_fcls is not None:
+            for k, v in default_fcls.items():
+                if not isinstance(k, StageType):
+                    self._default_fcls[StageType.from_str(k)] = v
+                else:
+                    self._default_fcls[k] = v
 
 
         self._stages = []
@@ -170,7 +171,10 @@ class Workflow:
 
         # fill any un-specified components with workflow defaults
         if stage.fcl is None:
-            stage.fcl = self._default_fcls[stage.stage_type]
+            try:
+                stage.fcl = self._default_fcls[stage.stage_type]
+            except KeyError:
+                raise NoFclFileException(f'Attempt to run stage {stage.stage_type} with no fcl provided and no default')
 
         if stage.run_dir is None:
             stage.run_dir = self._run_dir

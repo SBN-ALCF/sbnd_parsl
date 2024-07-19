@@ -56,20 +56,77 @@ class WorkflowExecutor:
 
         self.workflow_opts = settings['workflow']
 
-        self.unique_run_number = 0
         self.futures = []
         parsl.clear()
         parsl.load(self.config)
 
+        self.unique_run_number = 0
         self.stage_order = [StageType.from_str(key) for key in self.fcls.keys()]
-        self.workflow = Workflow(self.stage_order, self.fcls)
+        self.workflow = None
+        self.setup_workflow()
+
+
+    def setup_workflow(self):
+        """Set up the Workflow object. List the desired output stages and any available inputs."""
+        self.workflow = Workflow(self.stage_order, default_fcls=self.fcls)
         nsubruns = settings['run']['nsubruns']
         for i in range(nsubruns):
             # create reco2 file from MC, only need to specify the last stage since
             # there are no inputs
             s = Stage(StageType.RECO2)
+
+            # each reco2 file will have its own directory
             s.run_dir = get_subrun_dir(self.output_dir, i)
-            s.runfunc = self.runfunc_generator()
+
+            # assign function to run at this stage. Any generated intermediate
+            # stages will also run this
+            def runfunc(fcl, input_files, output_dir):
+                """
+                Submit a future for this stage and return the Parsl File object
+                for this stage's output. This function is called by each stage
+                object, and sets the stage's output file.
+                """
+
+                fcl_order = [self.fcls[m.value] for m in self.stage_order]
+                idx = fcl_order.index(fcl)
+
+                fcl_fullpath = self.fcl_dir / fcl
+                inputs = [str(fcl_fullpath), None]
+                if input_files is not None:
+                    inputs = [str(fcl_fullpath)] + input_files
+
+                output_dir.mkdir(parents=True, exist_ok=True)
+                output_filename = os.path.basename(fcl).replace(".fcl", ".root")
+                output_filepath = output_dir / pathlib.Path(output_filename)
+                output_file = [File(str(output_filepath))]
+
+                mg_cmd = f'PATH={self.larsoft_opts["larsoft_top"]}/sbndutil/v09_88_00_02/bin:$PATH {self.meta.run_cmd(os.path.basename(fcl), check_exists=False)}'
+
+                if idx == 0:
+                    # increment the event number and subrun number for each gen stage file
+                    self.unique_run_number += 1
+                    run_number = 1 + (self.unique_run_number // 100)
+                    subrun_number = self.unique_run_number % 100
+                    mg_cmd = '\n'.join([mg_cmd,
+                        f'echo "source.firstRun: {run_number}" >> {os.path.basename(fcl)}',
+                        f'echo "source.firstSubRun: {subrun_number}" >> {os.path.basename(fcl)}'
+                    ])
+
+                future = fcl_future(
+                    workdir = str(output_dir),
+                    stdout = str(output_dir / f'larStage{idx}.out'),
+                    stderr = str(output_dir / f'larStage{idx}.err'),
+                    template = SINGLE_FCL_TEMPLATE,
+                    larsoft_opts = self.larsoft_opts,
+                    inputs = inputs,
+                    outputs = output_file,
+                    pre_job_hook = mg_cmd
+                )
+                self.futures.append(future.outputs[0])
+
+                return future.outputs
+
+            s.runfunc = runfunc
             self.workflow.add_final_stage(s)
 
 
@@ -77,66 +134,14 @@ class WorkflowExecutor:
         self.workflow.run()
 
 
-    def runfunc_generator(self):
-        """Create a runfunc for each workflow stage using this class' members."""
-        self.unique_run_number += 1
-
-        def runfunc(fcl, input_files, output_dir):
-            """
-            Submit a future for this stage and return the Parsl File object
-            for this stage's output. This function is called by each stage
-            object, and sets the stage's output file.
-            """
-
-            run_number = 1 + (self.unique_run_number // 100)
-            subrun_number = self.unique_run_number % 100
-
-            fcl_order = [self.fcls[m.value] for m in self.stage_order]
-            idx = fcl_order.index(fcl)
-
-            fcl_fullpath = self.fcl_dir / fcl
-            inputs = [str(fcl_fullpath), None]
-            if input_files is not None:
-                inputs = [str(fcl_fullpath)] + input_files
-
-            output_dir.mkdir(parents=True, exist_ok=True)
-            output_filename = os.path.basename(fcl).replace(".fcl", ".root")
-            output_filepath = output_dir / pathlib.Path(output_filename)
-            output_file = [File(str(output_filepath))]
-
-            mg_cmd = f'PATH={self.larsoft_opts["larsoft_top"]}/sbndutil/v09_88_00_02/bin:$PATH {self.meta.run_cmd(os.path.basename(fcl), check_exists=False)}'
-            if idx == 0:
-                mg_cmd = '\n'.join([mg_cmd,
-                    f'echo "source.firstRun: {run_number}" >> {os.path.basename(fcl)}',
-                    f'echo "source.firstSubRun: {subrun_number}" >> {os.path.basename(fcl)}'
-                ])
-
-            future = fcl_future(
-                workdir = str(output_dir),
-                stdout = str(output_dir / f'larStage{idx}.out'),
-                stderr = str(output_dir / f'larStage{idx}.err'),
-                template = SINGLE_FCL_TEMPLATE,
-                larsoft_opts = self.larsoft_opts,
-                inputs = inputs,
-                outputs = output_file,
-                pre_job_hook = mg_cmd
-            )
-            self.futures.append(future)
-
-            return future.outputs
-
-        return runfunc
-
-
 def get_subrun_dir(prefix: pathlib.Path, subrun: int):
-    ''' create directory structure like XX00/XXXX '''
+    """Returns a path with directory structure like XXXX00/XXXXXX"""
     return prefix / f"{100*(subrun//100):06d}" / f"subrun_{subrun:06d}"
 
 
 def main(settings):
     wfe = WorkflowExecutor(settings)
     wfe.execute()
-
     print(f'Submitted {len(wfe.futures)} futures.')
         
     for f in wfe.futures:
