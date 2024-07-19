@@ -38,19 +38,6 @@ class NoFclFileException(Exception):
     pass
 
 
-'''
-class StageType(Enum):
-    GEN = auto()
-    G4 = auto()
-    DETSIM = auto()
-    RECO1 = auto()
-    RECO2 = auto()
-    DECODE = auto()
-    CAF = auto()
-    SCRUB = auto()
-'''
-
-
 class StageType(Enum):
     GEN = 'gen'
     G4 = 'g4'
@@ -62,13 +49,12 @@ class StageType(Enum):
     SCRUB = 'scrub'
     EMPTY = 'empty'
 
-
-# def str2stagetype(s: str) -> StageType:
-#     result = StageType.EMPTY
-#     for m in StageType.__members__.values():
-#         if m.value == s:
-#             return m
-#     return result
+    @staticmethod
+    def from_str(text: str):
+        try:
+            return StageType[text.upper()]
+        except KeyError:
+            return StageType.Empty
 
 
 class Stage:
@@ -78,7 +64,7 @@ class Stage:
         self.run_dir = None
         self.runfunc = runfunc
 
-        self._input_files = []
+        self._input_files = None
         self._output_files = None
         self._ancestors = {}
 
@@ -100,7 +86,10 @@ class Stage:
         return self._output_files is not None
 
     def add_input_file(self, file) -> None:
-        self._input_files.append(file)
+        if self._input_files is None:
+            self._input_files = [file]
+        else:
+            self._input_files.append(file)
 
     def run(self) -> None:
         """Produces the output file for this stage."""
@@ -111,7 +100,7 @@ class Stage:
             # these stages have no input files, do nothing for now
             pass
         else:
-            if len(self._input_files) == 0:
+            if self._input_files is None:
                 raise NoInputFileException(f'Tried to run stage of type {self._stage_type} which requires at least one input file, but it was not set.')
 
         self._output_files = self.runfunc(self.fcl, self._input_files, self.run_dir)
@@ -124,7 +113,7 @@ class Stage:
         """Add a list of known prior stages (ancestors) to this one."""
         for s in stages:
             try: 
-                self._ancestors[s.stage_type] += s
+                self._ancestors[s.stage_type].append(s)
             except KeyError:
                 self._ancestors[s.stage_type] = [s]
 
@@ -139,8 +128,10 @@ class Workflow:
     @staticmethod
     def default_runfunc(fcl, input_files, output_dir) -> List[Path]:
         """Default function called when each stage is run."""
-        input_file_arg_str = \
-            ' '.join([f'-s {str(file)}' for file in input_files])
+        input_file_arg_str = ''
+        if input_files is not None:
+            input_file_arg_str = \
+                ' '.join([f'-s {str(file)}' for file in input_files])
 
         output_filename = os.path.basename(fcl).replace(".fcl", ".root")
         output_file = output_dir / Path(output_filename)
@@ -150,7 +141,15 @@ class Workflow:
 
     def __init__(self, stage_order: List[StageType], default_fcls: Dict, run_dir: Path=Path(), runfunc: Callable=None):
         self._stage_order = stage_order
-        self._default_fcls = default_fcls
+
+        self._default_fcls = {}
+        for k, v in default_fcls.items():
+            if not isinstance(k, StageType):
+                self._default_fcls[StageType.from_str(k)] = v
+            else:
+                self._default_fcls[k] = v
+
+
         self._stages = []
         self._run_dir = run_dir
         self._default_runfunc = runfunc
@@ -162,41 +161,39 @@ class Workflow:
         self._stages.append(stage)
 
     def run(self):
-        """Run all stages in the workflow."""
+        """Run the workflow by individually running the added stages."""
         for s in self._stages:
-            print('running stage')
             self.run_stage(s)
 
     def run_stage(self, stage: Stage):
         """Run an individual stage, recursing to parent stages as necessary."""
-        # if stage.complete():
-        #     return
 
         # fill any un-specified components with workflow defaults
         if stage.fcl is None:
-            try:
-                stage.fcl = self._default_fcls[stage.stage_type]
-            except KeyError:
-                # also OK if user provided string version of StageType instead of the enum type
-                stage.fcl = self._default_fcls[stage.stage_type.value]
+            stage.fcl = self._default_fcls[stage.stage_type]
 
         if stage.run_dir is None:
             stage.run_dir = self._run_dir
         if stage.runfunc is None:
             stage.runfunc = self._default_runfunc
 
-        # stages with no parent
+        # some stage types should not have any parents
         if stage.stage_type in [StageType.DECODE, StageType.SCRUB, StageType.GEN]:
             stage.run()
             return
 
         # stages with parents
-        stage_idx = self._stage_order.index(stage.stage_type)
+        try:
+            stage_idx = self._stage_order.index(stage.stage_type)
+        except ValueError:
+            # also OK to use strings
+            stage_idx = self._stage_order.index(stage.stage_type.value)
         parent_type = self._stage_order[stage_idx - 1]
         # assume user wants us to build the ancestry map if the parent type doesn't exist
         if parent_type not in stage.ancestors:
             parent_stage = Stage(parent_type)
-            # inherit run dir and runfunc for any created stages
+
+            # parent will inherit run dir and runfunc
             parent_stage.run_dir = stage.run_dir
             parent_stage.runfunc = stage.runfunc
 
@@ -204,14 +201,15 @@ class Workflow:
             for a in stage.ancestors.values():
                 parent_stage.add_ancestors(a)
 
-            # self.run_stage(parent_stage)
             stage.add_ancestors([parent_stage])
 
+        # check to make sure the parents have been run before running this stage
         for a in stage.ancestors[parent_type]:
             self.run_stage(a)
             for f in a.output_files:
                 stage.add_input_file(f)
 
+        # now this stage is good to go!
         stage.run()
 
 
@@ -222,6 +220,7 @@ if __name__ == '__main__':
     # stage. We define the workflow stage order, and provide some defaults
 
     stage_order = (StageType.SCRUB, StageType.G4, StageType.DETSIM, StageType.RECO1, StageType.RECO2)
+    # stage_order = (StageType.GEN, StageType.G4, StageType.DETSIM, StageType.RECO1, StageType.RECO2, StageType.CAF)
     default_fcls = {
         StageType.GEN: 'gen.fcl',
         StageType.SCRUB: 'scrub.fcl',
@@ -229,19 +228,22 @@ if __name__ == '__main__':
         StageType.DETSIM: 'detsim.fcl',
         StageType.RECO1: 'reco1.fcl',
         StageType.RECO2: 'reco2.fcl',
+        StageType.CAF: 'caf.fcl',
     }
     wf = Workflow(stage_order, default_fcls, run_dir='../')
 
     for i in range(10):
         # define your inputs
-        s1 = Stage(StageType.SCRUB)
-        s1.add_input_file(f'reco1_{i:02d}.root')
-        s2 = Stage(StageType.G4, fcl='override.fcl')
-        s2.add_ancestors([s1])
+        # s1 = Stage(StageType.SCRUB)
+        # s1.add_input_file(f'reco1_{i:02d}.root')
+        # s2 = Stage(StageType.G4, fcl='override.fcl')
+        # s2.add_ancestors([s1])
 
         # assign them to your final stage. OK to leave gaps
-        s3 = Stage(StageType.RECO2)
-        s3.add_ancestors([s2])
+        s2a = Stage(StageType.RECO2)
+        s2b = Stage(StageType.RECO2)
+        s3 = Stage(StageType.CAF)
+        s3.add_ancestors([s2a, s2b])
 
         # add final stage to the workflow. Workflow will fill in any gaps using
         # the order and default fcls

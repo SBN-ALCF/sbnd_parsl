@@ -84,7 +84,7 @@ class MetadataGenerator:
             fcl = self.fclnames[stage]
 
         if fcl not in self.fclnames.values():
-            raise ValueError(f"Attempt to run metadata generation with {fclname} which has no corresponding stage.")
+            raise ValueError(f"Attempt to run metadata generation with {fcl} which has no corresponding stage.")
 
         fclfilepath = pathlib.Path(fcl)
         if check_exists and not fclfilepath.is_file():

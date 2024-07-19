@@ -1,8 +1,11 @@
+#!/usr/bin/env python3
+
 JOB_PRE = r'''
 echo "Job starting!"
 pwd
 date
 hostname'''
+
 
 JOB_POST = r'''
 echo "Job finishing!"
