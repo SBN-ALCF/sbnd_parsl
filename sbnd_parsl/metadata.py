@@ -31,9 +31,17 @@ class MetadataGenerator:
         # allow constructor to defer check for exe. This allows us to generate
         # metadata commands without modifying our local PATH, but we have to make
         # sure to modify PATH by the time the command actually runs
+        try:
+            exe = settings['exe']
+            del settings['exe']
+        except KeyError:
+            print('Warning: No metadata executable specified in settings. Using "{exe}"')
+            pass
+
         path = shutil.which(exe)
         if path is None and not defer_check:
             raise RuntimeError(f"Could not find {exe} in $PATH.")
+        self.exe = exe
 
         if len(fclnames) == 0:
             raise ValueError("Need to provide at least one stagename and corresponding fcl filename")
@@ -95,7 +103,7 @@ class MetadataGenerator:
         for key, value in m.items():
             args.append(f'--{key}')
             args.append(f'{value}')
-        args.insert(0, POMS_EXE)
+        args.insert(0, self.exe)
         return args
 
 

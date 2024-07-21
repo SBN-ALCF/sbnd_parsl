@@ -25,10 +25,14 @@ and what you want, automatically filling in intermediate steps as needed.
 """
 
 import os
+import json
+
 from enum import Enum, auto
 from pathlib import Path
 from typing import List, Dict, Optional, Callable
 
+import parsl
+from sbnd_parsl.utils import create_default_useropts, create_parsl_config
 
 class NoInputFileException(Exception):
     pass
@@ -215,6 +219,43 @@ class Workflow:
 
         # now this stage is good to go!
         stage.run()
+
+
+class WorkflowExecutor: 
+    """Class to wrap settings and workflow objects."""
+    def __init__(self, settings: json):
+        self.larsoft_opts = settings['larsoft']
+        self.output_dir = Path(settings['run']['output'])
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        self.fcl_dir = Path(settings['run']['fclpath'])
+        self.fcls = settings['fcls']
+
+        self.user_opts = create_default_useropts()
+        self.user_opts.update(settings['queue'])
+
+        self.user_opts["run_dir"] = str(self.output_dir / 'runinfo')
+        print(self.user_opts)
+
+        self.config = create_parsl_config(self.user_opts)
+        print(self.config)
+
+        self.workflow_opts = settings['workflow']
+
+        self.futures = []
+        parsl.clear()
+        parsl.load(self.config)
+
+        self.workflow = None
+
+
+    def execute(self):
+        self.setup_workflow()
+        self.workflow.run()
+
+
+    def setup_workflow(self):
+        pass
 
 
 if __name__ == '__main__':

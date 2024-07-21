@@ -12,9 +12,7 @@ import parsl
 from parsl.data_provider.files import File
 from parsl.app.app import bash_app
 
-from sbnd_parsl.workflow import StageType, Stage, Workflow
-from sbnd_parsl.utils import create_default_useropts, create_parsl_config, \
-    hash_name
+from sbnd_parsl.workflow import StageType, Stage, Workflow, WorkflowExecutor
 from sbnd_parsl.metadata import MetadataGenerator
 from sbnd_parsl.templates import SINGLE_FCL_TEMPLATE, CAF_TEMPLATE
 
@@ -33,62 +31,26 @@ def fcl_future(workdir, stdout, stderr, template, larsoft_opts, inputs=[], outpu
     )
 
 
-class WorkflowExecutor: 
-    """Class to wrap settings and workflow objects."""
+class Reco2FromGenExecutor(WorkflowExecutor):
+    """Execute a Gen -> G4 -> Detsim -> Reco1 -> Reco2 workflow from user settings."""
     def __init__(self, settings: json):
-        self.larsoft_opts = settings['larsoft']
-        self.output_dir = pathlib.Path(settings['run']['output'])
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-
-        self.fcl_dir = pathlib.Path(settings['run']['fclpath'])
-        self.fcls = settings['fcls']
-
-        self.user_opts = create_default_useropts()
-        self.user_opts.update(settings['queue'])
-
-        self.user_opts["run_dir"] = str(self.output_dir / 'runinfo')
-        print(self.user_opts)
-
-        self.config = create_parsl_config(self.user_opts)
-        print(self.config)
-
-        self.meta = MetadataGenerator(settings['metadata'], self.fcls, defer_check=True)
-
-        self.workflow_opts = settings['workflow']
-
-        self.futures = []
-        parsl.clear()
-        parsl.load(self.config)
+        super().__init__(settings)
 
         self.unique_run_number = 0
+        self.meta = MetadataGenerator(settings['metadata'], self.fcls, defer_check=True)
         self.stage_order = [StageType.from_str(key) for key in self.fcls.keys()]
-        self.workflow = None
-        self.setup_workflow()
-
 
     def setup_workflow(self):
-        """Set up the Workflow object. List the desired output stages and any available inputs."""
         self.workflow = Workflow(self.stage_order, default_fcls=self.fcls)
         nsubruns = settings['run']['nsubruns']
         for i in range(nsubruns):
-            # create reco2 file from MC, only need to specify the last stage since
-            # there are no inputs
-            s = Stage(StageType.RECO2)
-
-            # each reco2 file will have its own directory
-            s.run_dir = get_subrun_dir(self.output_dir, i)
-
-            # assign function to run at this stage. Any generated intermediate
-            # stages will also run this
+            # define the function to run at each stage
             def runfunc(fcl, input_files, output_dir):
                 """
                 Submit a future for this stage and return the Parsl File object
                 for this stage's output. This function is called by each stage
                 object, and sets the stage's output file.
                 """
-
-                fcl_order = [self.fcls[m.value] for m in self.stage_order]
-                idx = fcl_order.index(fcl)
 
                 fcl_fullpath = self.fcl_dir / fcl
                 inputs = [str(fcl_fullpath), None]
@@ -100,8 +62,9 @@ class WorkflowExecutor:
                 output_filepath = output_dir / pathlib.Path(output_filename)
                 output_file = [File(str(output_filepath))]
 
-                mg_cmd = f'PATH={self.larsoft_opts["larsoft_top"]}/sbndutil/v09_88_00_02/bin:$PATH {self.meta.run_cmd(os.path.basename(fcl), check_exists=False)}'
+                mg_cmd = self.meta.run_cmd(os.path.basename(fcl), check_exists=False)
 
+                idx = [self.fcls[m.value] for m in self.stage_order].index(fcl)
                 if idx == 0:
                     # increment the event number and subrun number for each gen stage file
                     self.unique_run_number += 1
@@ -126,12 +89,14 @@ class WorkflowExecutor:
 
                 return future.outputs
 
+            # create reco2 file from MC, only need to specify the last stage
+            # since there are no inputs
+            s = Stage(StageType.RECO2)
+
+            # each reco2 file will have its own directory
+            s.run_dir = get_subrun_dir(self.output_dir, i)
             s.runfunc = runfunc
             self.workflow.add_final_stage(s)
-
-
-    def execute(self):
-        self.workflow.run()
 
 
 def get_subrun_dir(prefix: pathlib.Path, subrun: int):
@@ -140,7 +105,7 @@ def get_subrun_dir(prefix: pathlib.Path, subrun: int):
 
 
 def main(settings):
-    wfe = WorkflowExecutor(settings)
+    wfe = Reco2FromGenExecutor(settings)
     wfe.execute()
     print(f'Submitted {len(wfe.futures)} futures.')
         
