@@ -225,12 +225,15 @@ class WorkflowExecutor:
     """Class to wrap settings and workflow objects."""
     def __init__(self, settings: json):
         self.larsoft_opts = settings['larsoft']
-        self.output_dir = Path(settings['run']['output'])
+
+        self.run_opts = settings['run']
+        self.output_dir = Path(self.run_opts['output'])
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        self.fcl_dir = Path(settings['run']['fclpath'])
+        self.fcl_dir = Path(self.run_opts['fclpath'])
         self.fcls = settings['fcls']
 
+        # parsl
         self.user_opts = create_default_useropts()
         self.user_opts.update(settings['queue'])
 
@@ -240,12 +243,12 @@ class WorkflowExecutor:
         self.config = create_parsl_config(self.user_opts)
         print(self.config)
 
-        self.workflow_opts = settings['workflow']
-
         self.futures = []
         parsl.clear()
         parsl.load(self.config)
 
+        # workflow
+        self.workflow_opts = settings['workflow']
         self.workflow = None
 
 

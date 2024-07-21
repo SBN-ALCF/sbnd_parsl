@@ -42,7 +42,7 @@ class Reco2FromGenExecutor(WorkflowExecutor):
 
     def setup_workflow(self):
         self.workflow = Workflow(self.stage_order, default_fcls=self.fcls)
-        nsubruns = settings['run']['nsubruns']
+        nsubruns = self.run_opts['nsubruns']
         for i in range(nsubruns):
             # define the function to run at each stage
             def runfunc(fcl, input_files, output_dir):
