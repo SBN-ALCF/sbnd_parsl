@@ -14,7 +14,7 @@ from parsl.app.app import bash_app
 
 from sbnd_parsl.workflow import StageType, Stage, Workflow, WorkflowExecutor
 from sbnd_parsl.metadata import MetadataGenerator
-from sbnd_parsl.templates import SINGLE_FCL_TEMPLATE, CAF_TEMPLATE
+from sbnd_parsl.templates import SINGLE_FCL_TEMPLATE, CAF_TEMPLATE, SINGLE_FCL_TEMPLATE_SPACK
 
 
 @bash_app(cache=True)

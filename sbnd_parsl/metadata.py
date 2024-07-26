@@ -35,7 +35,7 @@ class MetadataGenerator:
             exe = settings['exe']
             del settings['exe']
         except KeyError:
-            print('Warning: No metadata executable specified in settings. Using "{exe}"')
+            print(f'Warning: No metadata executable specified in settings. Using "{exe}"')
             pass
 
         path = shutil.which(exe)

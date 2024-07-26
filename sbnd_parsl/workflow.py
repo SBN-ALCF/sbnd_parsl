@@ -26,6 +26,7 @@ and what you want, automatically filling in intermediate steps as needed.
 
 import os
 import json
+from types import MethodType
 
 from enum import Enum, auto
 from pathlib import Path
@@ -62,11 +63,15 @@ class StageType(Enum):
 
 
 class Stage:
-    def __init__(self, stage_type: StageType, fcl: Optional[str]=None, runfunc: Callable=None):
+    def __init__(self, stage_type: StageType, fcl: Optional[str]=None,
+                 runfunc: Optional[Callable]=None, stage_order: Optional[List[StageType]]=None):
         self._stage_type: StageType = stage_type
         self.fcl = fcl
         self.run_dir = None
         self.runfunc = runfunc
+
+        # override for custom stage order, otherwise this is set by the Workflow
+        self.stage_order = stage_order
 
         self._input_files = None
         self._output_files = None
@@ -77,10 +82,14 @@ class Stage:
         return self._stage_type
 
     @property
-    def output_files(self) -> List[str]:
+    def output_files(self) -> List:
         if self._output_files is None:
             self.run()
         return self._output_files
+
+    @property
+    def input_files(self) -> List:
+        return self._input_files
 
     @property
     def ancestors(self) -> Dict:
@@ -115,6 +124,9 @@ class Stage:
 
     def add_ancestors(self, stages: List) -> None:
         """Add a list of known prior stages (ancestors) to this one."""
+        if not isinstance(stages, list):
+            stages = [stages]
+
         for s in stages:
             try: 
                 self._ancestors[s.stage_type].append(s)
@@ -186,24 +198,35 @@ class Workflow:
             stage.runfunc = self._default_runfunc
 
         # some stage types should not have any parents
-        if stage.stage_type in [StageType.DECODE, StageType.SCRUB, StageType.GEN]:
+        if stage.stage_type in [StageType.DECODE, StageType.GEN]:
             stage.run()
             return
 
-        # stages with parents
+        # scrub stage can take a reco1 input file or have a reco1 parent stage
+        if stage.stage_type == StageType.SCRUB and stage.input_files is not None:
+            stage.run()
+            return
+
+        # stages with parents. Use default order if not already set
+        if stage.stage_order is None:
+            print('setting default stage order')
+            stage.stage_order = self._stage_order
+
         try:
-            stage_idx = self._stage_order.index(stage.stage_type)
+            stage_idx = stage.stage_order.index(stage.stage_type)
         except ValueError:
             # also OK to use strings
-            stage_idx = self._stage_order.index(stage.stage_type.value)
-        parent_type = self._stage_order[stage_idx - 1]
+            stage_idx = stage.stage_order.index(stage.stage_type.value)
+        parent_type = stage.stage_order[stage_idx - 1]
         # assume user wants us to build the ancestry map if the parent type doesn't exist
         if parent_type not in stage.ancestors:
+            print(stage.stage_type, parent_type, stage.stage_order)
             parent_stage = Stage(parent_type)
 
-            # parent will inherit run dir and runfunc
+            # parent will inherit run dir and runfunc and stage order
             parent_stage.run_dir = stage.run_dir
             parent_stage.runfunc = stage.runfunc
+            parent_stage.stage_order = stage.stage_order
 
             # copy over the known ancestors to this stage too
             for a in stage.ancestors.values():
@@ -298,4 +321,37 @@ if __name__ == '__main__':
         wf.add_final_stage(s3)
 
     # run all stages
+    wf.run()
+
+
+
+
+if __name__ == '__main__':
+    stage_order = (StageType.SCRUB, StageType.G4, StageType.DETSIM, \
+                   StageType.RECO1, StageType.RECO2, StageType.CAF)
+    default_fcls = {
+        StageType.SCRUB: 'scrub.fcl',
+        StageType.G4: 'g4.fcl',
+        StageType.DETSIM: 'detsim.fcl',
+        StageType.RECO1: 'reco1.fcl',
+        StageType.RECO2: 'reco2.fcl',
+        StageType.CAF: 'caf.fcl',
+    }
+
+    wf = Workflow(stage_order, default_fcls, run_dir='../')
+
+    variations = ['g4_var1.fcl', 'g4_var2.fcl']
+    s1 = Stage(StageType.SCRUB)
+    s1.add_input_file('reco1_file.root')
+
+    for var_fcl in variations:
+        s2 = Stage(StageType.G4)
+        s2.fcl = var_fcl
+        s2.add_ancestors(s1)
+
+        s3 = Stage(StageType.RECO2)
+        s3.add_ancestors(s2)
+
+        wf.add_final_stage(s3)
+
     wf.run()
