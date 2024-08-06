@@ -104,8 +104,13 @@ class Stage:
         else:
             self._input_files.append(file)
 
-    def run(self) -> None:
+    def run(self, rerun: bool=False) -> None:
         """Produces the output file for this stage."""
+        # if calling run method directly instead of asking for output files,
+        # must specify rerun option to avoid calling runfunc multiple times!
+        if self._output_files is not None and not rerun:
+            return
+
         if self.fcl is None:
             raise NoFclFileException(f'Attempt to run stage {self._stage_type} with no fcl provided and no default')
 
@@ -209,7 +214,6 @@ class Workflow:
 
         # stages with parents. Use default order if not already set
         if stage.stage_order is None:
-            print('setting default stage order')
             stage.stage_order = self._stage_order
 
         try:
@@ -220,7 +224,6 @@ class Workflow:
         parent_type = stage.stage_order[stage_idx - 1]
         # assume user wants us to build the ancestry map if the parent type doesn't exist
         if parent_type not in stage.ancestors:
-            print(stage.stage_type, parent_type, stage.stage_order)
             parent_stage = Stage(parent_type)
 
             # parent will inherit run dir and runfunc and stage order

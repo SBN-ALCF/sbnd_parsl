@@ -55,8 +55,8 @@ singularity run -B /lus/eagle/ -B /grand/ {{container}} <<EOF
     set +e
 
     # Clean up temporary files, if they exist:
-    rm -f RootOutput-*.root
-    rm -f TFileService-*.root
+    # rm -f RootOutput-*.root
+    # rm -f TFileService-*.root
 EOF
 {{post_job_hook}}
 {JOB_POST}

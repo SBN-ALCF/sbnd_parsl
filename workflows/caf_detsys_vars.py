@@ -131,7 +131,7 @@ class CAFFromGenDetsysExecutor(WorkflowExecutor):
             cv_dir = self.output_dir / 'cv'
             s = Stage(StageType.CAF)
             s.run_dir = cv_dir / 'caf'
-            # s.runfunc = runfunc
+            s.runfunc = runfunc
 
             # CAF for each variation
             var_caf_stages = {}
@@ -146,24 +146,25 @@ class CAFFromGenDetsysExecutor(WorkflowExecutor):
 
             # each CAF gets 20 subruns
             for j in range(20):
-                # central value CAF, just delcare reco1 stage to be used below
-                # workflow will fill in reco2 & other stages
                 subrun_dir = get_subrun_dir(cv_dir, j)
-                s2 = Stage(StageType.RECO1)
-                s2.runfunc = runfunc
-                s2.run_dir = subrun_dir
-                s.add_ancestors(s2)
 
-                s1 = Stage(StageType.RECO2)
+                # define reco1 stage explicitly, so that we can link reco2 CV
+                # and detsys scrub stages to it
+                s1 = Stage(StageType.RECO1)
                 s1.runfunc = runfunc
                 s1.run_dir = subrun_dir
+
+                s2 = Stage(StageType.RECO2)
+                s2.runfunc = runfunc
+                s2.run_dir = subrun_dir
+                s2.add_ancestors(s1)
                 s.add_ancestors(s2)
 
                 # scrub stage for variations: takes reco1 from CV as input
                 s3 = Stage(StageType.SCRUB, stage_order=self.scrub_stage_order)
-                s3.runfunc = runfunc2
+                s3.runfunc = runfunc
                 s3.run_dir = subrun_dir
-                s3.add_ancestors(s2)
+                s3.add_ancestors(s1)
 
                 for var in self.variations:
                     var_subrun_dir = get_subrun_dir(var_dirs[var], j)
