@@ -7,6 +7,7 @@
 import sys, os
 import json
 import pathlib
+import functools
 from types import MethodType
 from typing import Dict, List
 
@@ -16,7 +17,9 @@ from parsl.app.app import bash_app
 
 from sbnd_parsl.workflow import StageType, Stage, Workflow, WorkflowExecutor
 from sbnd_parsl.metadata import MetadataGenerator
-from sbnd_parsl.templates import SINGLE_FCL_TEMPLATE, CAF_TEMPLATE, SINGLE_FCL_TEMPLATE_SPACK
+from sbnd_parsl.templates import SINGLE_FCL_TEMPLATE, CAF_TEMPLATE, \
+    SINGLE_FCL_TEMPLATE_SPACK
+from sbnd_parsl.utils import hash_name
 
 
 @bash_app(cache=True)
@@ -33,13 +36,75 @@ def fcl_future(workdir, stdout, stderr, template, larsoft_opts, inputs=[], outpu
     )
 
 
+def runfunc(self, fcl, input_files, output_dir,\
+            fcl_path, name_salt, fcl_list, larsoft_opts, futures_list):
+    """
+    Method bound to each Stage object and run during workflow execution.
+    fcl_path, name_salt, fcl_list, larsoft_opts, futures_list are provided by
+    the WorkflowExecutor
+    """
+
+    fcl_fullpath = fcl_path / fcl
+    inputs = [str(fcl_fullpath), None]
+    if input_files is not None:
+        inputs = [str(fcl_fullpath)] + input_files
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_filename = ''.join([
+        str(self.stage_type.value), '-',
+        hash_name(os.path.basename(fcl) + name_salt),
+        ".root"
+    ])
+
+    output_filepath = output_dir / pathlib.Path(output_filename)
+    output_file = [File(str(output_filepath))]
+
+
+    mg_cmd = ''
+    # if self.stage_type not in [StageType.SCRUB, StageType.CAF]:
+    #     # scrub fcl does not support metadata
+    #     mg_cmd = self.meta[var_name].run_cmd(os.path.basename(fcl), check_exists=False)
+
+    idx = self.stage_order.index(self.stage_type)
+
+    if self.stage_type == StageType.GEN:
+        # increment the event number and subrun number for each gen stage file
+        pass
+        """
+        self.unique_run_number += 1
+        run_number = 1 + (self.unique_run_number // 100)
+        subrun_number = self.unique_run_number % 100
+        mg_cmd = '\n'.join([mg_cmd,
+            f'echo "source.firstRun: {run_number}" >> {os.path.basename(fcl)}',
+            f'echo "source.firstSubRun: {subrun_number}" >> {os.path.basename(fcl)}'
+        ])
+        """
+
+    future = fcl_future(
+        workdir = str(output_dir),
+        stdout = str(output_dir / f'larStage{idx}.out'),
+        stderr = str(output_dir / f'larStage{idx}.err'),
+        template = SINGLE_FCL_TEMPLATE,
+        larsoft_opts = larsoft_opts,
+        inputs = inputs,
+        outputs = output_file,
+        pre_job_hook = mg_cmd
+    )
+
+    # this modifies the list passed in by WorkflowExecutor
+    futures_list.append(future.outputs[0])
+
+    return future.outputs
+            
+
 class CAFFromGenDetsysExecutor(WorkflowExecutor):
     """
     Execute a Gen -> G4 -> Detsim -> Reco1 -> Reco2 -> CAF
                                        |
                                        V
                                      Scrub -> G4 (variation) \
-                                           -> Detsim (variation) -> Reco1 \
+                                           -> Detsim (variation) \
+                                           -> Reco1 (variation) \
                                            -> Reco2 -> CAF
     workflow.
     """
@@ -47,9 +112,13 @@ class CAFFromGenDetsysExecutor(WorkflowExecutor):
         super().__init__(settings)
 
         self.unique_run_number = 0
-        self.default_fcls = self.fcls['default']
-        self.meta = MetadataGenerator(settings['metadata'], self.default_fcls, defer_check=True)
 
+        # same seed + same output dir should produce the same file names
+        # in case we need to re-run the workflow
+        self.name_salt = str(settings['run']['seed']) + str(self.output_dir)
+
+        # fcl structure in settings is a nested dict for this workflow
+        self.default_fcls = self.fcls['default']
         self.variations = [key for key in self.fcls.keys() if key != 'default']
 
         # fill in the default fcls for each variation
@@ -59,6 +128,14 @@ class CAFFromGenDetsysExecutor(WorkflowExecutor):
                     continue
                 self.fcls[var][key] = val
 
+        # use a separate metadata generator for each variation. This ensures
+        # the fcl order is correct
+        self.meta = {
+            key: MetadataGenerator(
+                settings['metadata'], fcls, defer_check=True) \
+            for key, fcls in self.fcls.items()
+        }
+
         # the default (CV) stage order
         self.stage_order = [StageType.GEN, StageType.G4, StageType.DETSIM, \
                             StageType.RECO1, StageType.RECO2, StageType.CAF]
@@ -66,81 +143,46 @@ class CAFFromGenDetsysExecutor(WorkflowExecutor):
         # when we construct the scrub stage, this will let the workflow know to
         # treat a reco1 stage as the parent of scrub, instead of a fixed input file
         self.scrub_stage_order = [StageType.RECO1, StageType.SCRUB]
+
+        # the stage order for the variations
         self.var_stage_order = [StageType.SCRUB, StageType.G4, StageType.DETSIM, \
                                 StageType.RECO1, StageType.RECO2, StageType.CAF]
 
     def setup_workflow(self):
+        """Create the workflow object with defaults for the CV, then add all the
+        necessary variation stages and ancestry."""
         self.workflow = Workflow(self.stage_order, default_fcls=self.default_fcls)
+
         nsubruns = self.run_opts['nsubruns']
         for i in range(nsubruns):
-            # define the function to run at each stage
-            def runfunc(fcl, input_files, output_dir):
-                """
-                Submit a future for this stage and return the Parsl File object
-                for this stage's output. This function is called by each stage
-                object, and sets the stage's output file.
-                """
-
-                fcl_fullpath = self.fcl_dir / fcl
-                inputs = [str(fcl_fullpath), None]
-                if input_files is not None:
-                    inputs = [str(fcl_fullpath)] + input_files
-
-                output_dir.mkdir(parents=True, exist_ok=True)
-                output_filename = os.path.basename(fcl).replace(".fcl", ".root")
-                output_filepath = output_dir / pathlib.Path(output_filename)
-                output_file = [File(str(output_filepath))]
-
-                mg_cmd = '' # self.meta.run_cmd(os.path.basename(fcl), check_exists=False)
-
-                idx = -1
-                for fcl_list in self.fcls.values():
-                    try:
-                        idx = [fcl_list[m.value] for m in self.stage_order].index(fcl)
-                        break
-                    except ValueError:
-                        pass
-
-                if idx == 0:
-                    # increment the event number and subrun number for each gen stage file
-                    self.unique_run_number += 1
-                    run_number = 1 + (self.unique_run_number // 100)
-                    subrun_number = self.unique_run_number % 100
-                    mg_cmd = '\n'.join([mg_cmd,
-                        f'echo "source.firstRun: {run_number}" >> {os.path.basename(fcl)}',
-                        f'echo "source.firstSubRun: {subrun_number}" >> {os.path.basename(fcl)}'
-                    ])
-
-                future = fcl_future(
-                    workdir = str(output_dir),
-                    stdout = str(output_dir / f'larStage{idx}.out'),
-                    stderr = str(output_dir / f'larStage{idx}.err'),
-                    template = SINGLE_FCL_TEMPLATE,
-                    larsoft_opts = self.larsoft_opts,
-                    inputs = inputs,
-                    outputs = output_file,
-                    pre_job_hook = mg_cmd
-                )
-                self.futures.append(future.outputs[0])
-
-                return future.outputs
-
             # create reco2 file from MC, only need to specify the last stage
-            # since there are no inputs
-            # central value CAF
+            # since there are no inputs for these
+
+            # central value CAF stage, pass in required settings
             cv_dir = self.output_dir / 'cv'
+            cv_runfunc = functools.partial(runfunc, fcl_path=self.fcl_dir,
+                                           name_salt=self.name_salt, 
+                                           fcl_list=self.fcls['default'],
+                                           larsoft_opts=self.larsoft_opts,
+                                           futures_list=self.futures)
             s = Stage(StageType.CAF)
             s.run_dir = cv_dir / 'caf'
-            s.runfunc = runfunc
+            s.runfunc = cv_runfunc
 
             # CAF for each variation
             var_caf_stages = {}
             var_dirs = {}
+            var_runfuncs = {}
             for var in self.variations:
                 svar = Stage(StageType.CAF, stage_order=self.var_stage_order)
                 var_dir = self.output_dir / var
+                var_runfuncs[var] = functools.partial(runfunc, fcl_path=self.fcl_dir,
+                                           name_salt=self.name_salt, 
+                                           fcl_list=self.fcls[var],
+                                           larsoft_opts=self.larsoft_opts,
+                                           futures_list=self.futures)
                 svar.run_dir = var_dir / 'caf'
-                svar.runfunc = runfunc
+                svar.runfunc = var_runfuncs[var]
                 var_caf_stages[var] = svar
                 var_dirs[var] = var_dir
 
@@ -149,20 +191,21 @@ class CAFFromGenDetsysExecutor(WorkflowExecutor):
                 subrun_dir = get_subrun_dir(cv_dir, j)
 
                 # define reco1 stage explicitly, so that we can link reco2 CV
-                # and detsys scrub stages to it
+                # and detsys scrub stages to it. Only need to set the run_dir
+                # for RECO2, it will be inherited by parent stages!
                 s1 = Stage(StageType.RECO1)
-                s1.runfunc = runfunc
-                s1.run_dir = subrun_dir
-
                 s2 = Stage(StageType.RECO2)
-                s2.runfunc = runfunc
                 s2.run_dir = subrun_dir
                 s2.add_ancestors(s1)
+
+                # also add the reco2 stage to the CV caf stage
                 s.add_ancestors(s2)
 
                 # scrub stage for variations: takes reco1 from CV as input
+                # note: manually set runfunc and subrun dir to CV, since
+                # otherwise these will get set from variation child
                 s3 = Stage(StageType.SCRUB, stage_order=self.scrub_stage_order)
-                s3.runfunc = runfunc
+                s3.runfunc = cv_runfunc
                 s3.run_dir = subrun_dir
                 s3.add_ancestors(s1)
 
@@ -173,34 +216,26 @@ class CAFFromGenDetsysExecutor(WorkflowExecutor):
                     # we enumerate all of them
                     s4 = Stage(StageType.G4, stage_order=self.var_stage_order)
                     s4.fcl = self.fcls[var]['g4']
-                    s4.runfunc = runfunc
-                    s4.run_dir = var_subrun_dir
                     s4.add_ancestors(s3)
 
                     s5 = Stage(StageType.DETSIM, stage_order=self.var_stage_order)
                     s5.fcl = self.fcls[var]['detsim']
-                    s5.runfunc = runfunc
-                    s5.run_dir = var_subrun_dir
                     s5.add_ancestors(s4)
 
                     s6 = Stage(StageType.RECO1, stage_order=self.var_stage_order)
                     s6.fcl = self.fcls[var]['reco1']
-                    s6.runfunc = runfunc
-                    s6.run_dir = var_subrun_dir
                     s6.add_ancestors(s5)
 
                     s7 = Stage(StageType.RECO2, stage_order=self.var_stage_order)
                     s7.fcl = self.fcls[var]['reco2']
-                    s7.runfunc = runfunc
                     s7.run_dir = var_subrun_dir
                     s7.add_ancestors(s6)
 
                     # finally add the variation built from scrub stage to the
-                    # variation caf.  workflow will fill in the other stages
+                    # variation caf. workflow will fill in the other stages
                     var_caf_stages[var].add_ancestors(s7)
 
 
-            # each reco2 file will have its own directory
             self.workflow.add_final_stage(s)
             for var, svar in var_caf_stages.items():
                 self.workflow.add_final_stage(svar)
@@ -208,7 +243,7 @@ class CAFFromGenDetsysExecutor(WorkflowExecutor):
 
 def get_subrun_dir(prefix: pathlib.Path, subrun: int):
     """Returns a path with directory structure like XXXX00/XXXXXX"""
-    return prefix / f"{100*(subrun//100):06d}" / f"subrun_{subrun:06d}"
+    return prefix / f"{100*(subrun//100):06d}" / f"{subrun:06d}"
 
 
 def main(settings):

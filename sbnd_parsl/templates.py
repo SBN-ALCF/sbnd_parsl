@@ -45,9 +45,11 @@ singularity run -B /lus/eagle/ -B /grand/ {{container}} <<EOF
     # get the fcls
     set -e
     # Add an optional input file:
-    export lar_cmd="-c $LOCAL_FCL --nevts {{nevts}} --output {{output}} {{lar_args}}"
+    export lar_cmd="-c $LOCAL_FCL --output {{output}} {{lar_args}}"
     if [ -f {{input}} ]; then
         export lar_cmd="\$lar_cmd --source {{input}} "
+    else
+        export lar_cmd="\$lar_cmd --nevts {{nevts}} "
     fi
     echo \$lar_cmd
     echo "About to run larsoft"

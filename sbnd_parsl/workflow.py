@@ -68,7 +68,7 @@ class Stage:
         self._stage_type: StageType = stage_type
         self.fcl = fcl
         self.run_dir = None
-        self.runfunc = runfunc
+        self.runfunc = None
 
         # override for custom stage order, otherwise this is set by the Workflow
         self.stage_order = stage_order
@@ -76,6 +76,16 @@ class Stage:
         self._input_files = None
         self._output_files = None
         self._ancestors = {}
+
+    """
+    @property
+    def runfunc(self) -> Optional[Callable]:
+        return self.runfunc
+
+    @runfunc.setter
+    def runfunc(self, func: Callable) -> None:
+        self.runfunc = func
+    """
 
     @property
     def stage_type(self) -> StageType:
@@ -121,7 +131,8 @@ class Stage:
             if self._input_files is None:
                 raise NoInputFileException(f'Tried to run stage of type {self._stage_type} which requires at least one input file, but it was not set.')
 
-        self._output_files = self.runfunc(self.fcl, self._input_files, self.run_dir)
+        func = MethodType(self.runfunc, self)
+        self._output_files = func(self.fcl, self._input_files, self.run_dir)
 
     def clean(self) -> None:
         """Delete the output file on disk."""
@@ -147,7 +158,7 @@ class Workflow:
     """
 
     @staticmethod
-    def default_runfunc(fcl, input_files, output_dir) -> List[Path]:
+    def default_runfunc(stage_self, fcl, input_files, output_dir) -> List[Path]:
         """Default function called when each stage is run."""
         input_file_arg_str = ''
         if input_files is not None:
@@ -170,7 +181,6 @@ class Workflow:
                     self._default_fcls[StageType.from_str(k)] = v
                 else:
                     self._default_fcls[k] = v
-
 
         self._stages = []
         self._run_dir = run_dir
@@ -239,6 +249,14 @@ class Workflow:
 
         # check to make sure the parents have been run before running this stage
         for a in stage.ancestors[parent_type]:
+            # copy defaults as needed
+            if a.stage_order is None:
+                a.stage_order = stage.stage_order
+            if a.run_dir is None:
+                a.run_dir = stage.run_dir
+            if a.runfunc is None:
+                a.runfunc = stage.runfunc
+
             self.run_stage(a)
             for f in a.output_files:
                 stage.add_input_file(f)

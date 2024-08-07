@@ -119,6 +119,6 @@ def create_parsl_config(user_opts):
 
 
 def hash_name(string: str) -> str:
-    ''' create something that looks like abcd-abcd-abcd-abcd from a string '''
+    """Create something that looks like abcd-abcd-abcd-abcd from a string."""
     strhash = hashlib.shake_128(bytes(string, encoding='utf8')).hexdigest(16)
     return '-'.join(strhash[i*4:i*4+4] for i in range(4))
