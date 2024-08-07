@@ -27,10 +27,13 @@ class MetadataGenerator:
         "cafname": "caf",
     }
 
-    def __init__(self, settings: Dict, fclnames: Dict, exe=POMS_EXE, defer_check=False):
+    def __init__(self, settings_: Dict, fclnames: Dict, exe=POMS_EXE, defer_check=False):
         # allow constructor to defer check for exe. This allows us to generate
         # metadata commands without modifying our local PATH, but we have to make
         # sure to modify PATH by the time the command actually runs
+
+        # copy since we will del, caller may re-use settings
+        settings = settings_.copy()
         try:
             exe = settings['exe']
             del settings['exe']
