@@ -101,3 +101,29 @@ EOF
 {{post_job_hook}}
 {JOB_POST}
 '''
+
+# this template additionally loads sbndata and expects "input" in the form of "-s file1 -s file2 ..."
+SPINE_TEMPLATE = f'''
+{JOB_PRE}
+cd {{workdir}}
+echo "Current directory: "
+pwd
+echo "Current files: "
+ls
+
+{{pre_job_hook}}
+echo "Load singularity"
+module use /soft/spack/gcc/0.6.1/install/modulefiles/Core
+module load apptainer
+set -e
+singularity run -B /lus/eagle/ -B /lus/grand/ --nv {{container}} <<EOF
+    echo "Running in: "
+    pwd
+    # python spine/bin/run.py -c configs/icarus_full_chain_240719.cfg
+    python /lus/grand/projects/neutrinoGPU/software/spine/spine/bin/run.py -c {{config}} -S {{input}}
+EOF
+{{post_job_hook}}
+{JOB_POST}
+'''
+
+
