@@ -4,6 +4,27 @@
 # value (CV) MC sample, then scrubs the reco1 files and re-simulates them under
 # different detector conditions. All reco2 files are put into CAF files
 
+# output file structure:
+"""
+./
+    cv/
+        gen/
+            gen-...-1.root
+            gen-...-2.root
+            gen-...-3.root
+            ...
+        ...
+        caf/
+            ...
+    var1/
+        gen/
+            ...
+        ...
+    ...
+    varN/
+        ...
+"""
+
 import sys, os
 import json
 import pathlib
@@ -36,63 +57,53 @@ def fcl_future(workdir, stdout, stderr, template, larsoft_opts, inputs=[], outpu
     )
 
 
-def runfunc(self, fcl, input_files, output_dir,\
-            fcl_path, name_salt, fcl_list, larsoft_opts, futures_list):
-    """
-    Method bound to each Stage object and run during workflow execution.
-    fcl_path, name_salt, fcl_list, larsoft_opts, futures_list are provided by
-    the WorkflowExecutor
-    """
+def runfunc(self, fcl, input_files, run_dir, var_name, executor):
+    """Method bound to each Stage object and run during workflow execution."""
 
-    fcl_fullpath = fcl_path / fcl
+    fcl_fullpath = executor.fcl_dir / fcl
     inputs = [str(fcl_fullpath), None]
     if input_files is not None:
         inputs = [str(fcl_fullpath)] + input_files
 
+    run_dir.mkdir(parents=True, exist_ok=True)
+    output_dir = executor.output_dir / var_name / self.stage_type.value
     output_dir.mkdir(parents=True, exist_ok=True)
+
     output_filename = ''.join([
-        str(self.stage_type.value), '-',
-        hash_name(os.path.basename(fcl) + name_salt),
+        str(self.stage_type.value), '-', var_name, '-',
+        hash_name(os.path.basename(fcl) + executor.name_salt + str(executor.lar_run_counter)),
         ".root"
     ])
+    executor.lar_run_counter += 1
 
-    output_filepath = output_dir / pathlib.Path(output_filename)
+    output_filepath = output_dir / output_filename
     output_file = [File(str(output_filepath))]
 
-
-    mg_cmd = ''
-    # if self.stage_type not in [StageType.SCRUB, StageType.CAF]:
-    #     # scrub fcl does not support metadata
-    #     mg_cmd = self.meta[var_name].run_cmd(os.path.basename(fcl), check_exists=False)
-
-    idx = self.stage_order.index(self.stage_type)
+    mg_cmd = executor.meta[var_name].run_cmd(
+        output_filename + '.json', os.path.basename(fcl), check_exists=False)
 
     if self.stage_type == StageType.GEN:
-        # increment the event number and subrun number for each gen stage file
-        pass
-        """
-        self.unique_run_number += 1
-        run_number = 1 + (self.unique_run_number // 100)
-        subrun_number = self.unique_run_number % 100
+        executor.unique_run_number += 1
+        run_number = 1 + (executor.unique_run_number // 100)
+        subrun_number = executor.unique_run_number % 100
         mg_cmd = '\n'.join([mg_cmd,
             f'echo "source.firstRun: {run_number}" >> {os.path.basename(fcl)}',
             f'echo "source.firstSubRun: {subrun_number}" >> {os.path.basename(fcl)}'
         ])
-        """
 
     future = fcl_future(
-        workdir = str(output_dir),
-        stdout = str(output_dir / f'larStage{idx}.out'),
-        stderr = str(output_dir / f'larStage{idx}.err'),
+        workdir = str(run_dir),
+        stdout = str(run_dir / output_filename.replace(".root", ".out")),
+        stderr = str(run_dir / output_filename.replace(".root", ".err")),
         template = SINGLE_FCL_TEMPLATE,
-        larsoft_opts = larsoft_opts,
+        larsoft_opts = executor.larsoft_opts,
         inputs = inputs,
         outputs = output_file,
         pre_job_hook = mg_cmd
     )
 
     # this modifies the list passed in by WorkflowExecutor
-    futures_list.append(future.outputs[0])
+    executor.futures.append(future.outputs[0])
 
     return future.outputs
             
@@ -111,15 +122,19 @@ class CAFFromGenDetsysExecutor(WorkflowExecutor):
     def __init__(self, settings: json):
         super().__init__(settings)
 
+        # use this to assign the run/subrun of generated events
         self.unique_run_number = 0
+
+        # use this to count the number of larsoft runs
+        self.lar_run_counter = 0
 
         # same seed + same output dir should produce the same file names
         # in case we need to re-run the workflow
         self.name_salt = str(settings['run']['seed']) + str(self.output_dir)
 
         # fcl structure in settings is a nested dict for this workflow
-        self.default_fcls = self.fcls['default']
-        self.variations = [key for key in self.fcls.keys() if key != 'default']
+        self.default_fcls = self.fcls['cv']
+        self.variations = [key for key in self.fcls.keys() if key != 'cv']
 
         # fill in the default fcls for each variation
         for var in self.variations:
@@ -160,11 +175,7 @@ class CAFFromGenDetsysExecutor(WorkflowExecutor):
 
             # central value CAF stage, pass in required settings
             cv_dir = self.output_dir / 'cv'
-            cv_runfunc = functools.partial(runfunc, fcl_path=self.fcl_dir,
-                                           name_salt=self.name_salt, 
-                                           fcl_list=self.fcls['default'],
-                                           larsoft_opts=self.larsoft_opts,
-                                           futures_list=self.futures)
+            cv_runfunc = functools.partial(runfunc, var_name='cv', executor=self)
             s = Stage(StageType.CAF)
             s.run_dir = cv_dir / 'caf'
             s.runfunc = cv_runfunc
@@ -176,11 +187,7 @@ class CAFFromGenDetsysExecutor(WorkflowExecutor):
             for var in self.variations:
                 svar = Stage(StageType.CAF, stage_order=self.var_stage_order)
                 var_dir = self.output_dir / var
-                var_runfuncs[var] = functools.partial(runfunc, fcl_path=self.fcl_dir,
-                                           name_salt=self.name_salt, 
-                                           fcl_list=self.fcls[var],
-                                           larsoft_opts=self.larsoft_opts,
-                                           futures_list=self.futures)
+                var_runfuncs[var] = functools.partial(runfunc, var_name=var, executor=self)
                 svar.run_dir = var_dir / 'caf'
                 svar.runfunc = var_runfuncs[var]
                 var_caf_stages[var] = svar
@@ -188,14 +195,12 @@ class CAFFromGenDetsysExecutor(WorkflowExecutor):
 
             # each CAF gets 20 subruns
             for j in range(20):
-                subrun_dir = get_subrun_dir(cv_dir, j)
-
                 # define reco1 stage explicitly, so that we can link reco2 CV
                 # and detsys scrub stages to it. Only need to set the run_dir
                 # for RECO2, it will be inherited by parent stages!
                 s1 = Stage(StageType.RECO1)
                 s2 = Stage(StageType.RECO2)
-                s2.run_dir = subrun_dir
+                s2.run_dir = get_subrun_dir(cv_dir, j)
                 s2.add_ancestors(s1)
 
                 # also add the reco2 stage to the CV caf stage
@@ -206,11 +211,10 @@ class CAFFromGenDetsysExecutor(WorkflowExecutor):
                 # otherwise these will get set from variation child
                 s3 = Stage(StageType.SCRUB, stage_order=self.scrub_stage_order)
                 s3.runfunc = cv_runfunc
-                s3.run_dir = subrun_dir
+                s3.run_dir = get_subrun_dir(cv_dir, j)
                 s3.add_ancestors(s1)
 
                 for var in self.variations:
-                    var_subrun_dir = get_subrun_dir(var_dirs[var], j)
                     # variation fcl
                     # variations may change any of the preceding stages, so
                     # we enumerate all of them
@@ -228,7 +232,7 @@ class CAFFromGenDetsysExecutor(WorkflowExecutor):
 
                     s7 = Stage(StageType.RECO2, stage_order=self.var_stage_order)
                     s7.fcl = self.fcls[var]['reco2']
-                    s7.run_dir = var_subrun_dir
+                    s7.run_dir = get_subrun_dir(var_dirs[var], j)
                     s7.add_ancestors(s6)
 
                     # finally add the variation built from scrub stage to the
