@@ -10,13 +10,13 @@ class SimpleWorkflowExecutor(WorkflowExecutor):
     def setup_workflow(self):
         stage_order = [StageType.GEN, StageType.G4, StageType.DETSIM]
 
-        self.workflow = Workflow(stage_order, self.fcls)
+        workflow = Workflow(stage_order, self.fcls)
         s = Stage(StageType.DETSIM)
         s.run_dir = self.run_opts['output']
 
         # workflow will automatically fill in g4 and gen stages, with
         # run_dir inherited from detsim stage
-        self.workflow.add_final_stage(s)
+        workflow.run_stage(s)
 
 def main(settings):
     wfe = SimpleWorkflowExecutor(settings)

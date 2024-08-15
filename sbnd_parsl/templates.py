@@ -56,9 +56,10 @@ singularity run -B /lus/eagle/ -B /grand/ {{container}} <<EOF
     lar \$lar_cmd
     set +e
 
-    # Clean up temporary files, if they exist:
-    # rm -f RootOutput-*.root
-    # rm -f TFileService-*.root
+    # move histogram and json files to same directory as output
+    # note: may not exist, fail silently
+    mv *.json $(dirname {{output}}) || true
+    mv  hist*root "$(dirname {{output}})/hists_$(basename {{output}})" || true
 EOF
 {{post_job_hook}}
 {JOB_POST}

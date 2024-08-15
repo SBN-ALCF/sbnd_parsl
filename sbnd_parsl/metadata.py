@@ -64,7 +64,6 @@ class MetadataGenerator:
         this_metadata["inputfclname"] = self.fclnames[stagename]
         this_metadata["mdfclname"] = self.fclnames[stagename]
         this_metadata["mdprojectstage"] = stagename
-        this_metadata["tfilemdjsonname"] = self.fclnames[stagename].replace('.fcl', '.root.json')
         if stagename != "caf":
             del this_metadata["cafname"]
 
@@ -78,15 +77,15 @@ class MetadataGenerator:
         ]
         return self.metadata_stage(stagename)
 
-    def run(self, fcl='', stage='', check_exists=True):
-        parts = self.run_cmd_parts(fcl, stage, check_exists)
+    def run(self, filename, fcl='', stage='', check_exists=True):
+        parts = self.run_cmd_parts(filename, fcl, stage, check_exists)
         subprocess.run(parts)
 
-    def run_cmd(self, fcl='', stage='', check_exists=True):
-        parts = self.run_cmd_parts(fcl, stage, check_exists)
+    def run_cmd(self, filename, fcl='', stage='', check_exists=True):
+        parts = self.run_cmd_parts(filename, fcl, stage, check_exists)
         return ' '.join(parts)
 
-    def run_cmd_parts(self, fcl='', stage='', check_exists=True):
+    def run_cmd_parts(self, filename, fcl='', stage='', check_exists=True):
         """ Generate command to run POMS utility with metadata """
         if fcl == '' and stage == '':
             raise RuntimeError("run method requires either a fcl or stage key word argument")
@@ -102,6 +101,7 @@ class MetadataGenerator:
             raise ValueError(f"{fcl} does not exist.")
 
         m = self.metadata_fcl(fcl)
+        m["tfilemdjsonname"] = filename
         args = []
         for key, value in m.items():
             args.append(f'--{key}')

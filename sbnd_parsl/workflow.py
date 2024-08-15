@@ -35,11 +35,15 @@ from typing import List, Dict, Optional, Callable
 import parsl
 from sbnd_parsl.utils import create_default_useropts, create_parsl_config
 
+
 class NoInputFileException(Exception):
     pass
 
 
 class NoFclFileException(Exception):
+    pass
+
+class WorkflowException(Exception):
     pass
 
 
@@ -73,19 +77,14 @@ class Stage:
         # override for custom stage order, otherwise this is set by the Workflow
         self.stage_order = stage_order
 
+        self._complete = False
         self._input_files = None
         self._output_files = None
         self._ancestors = {}
+        # print(f'constructed stagetype {self._stage_type}')
 
-    """
-    @property
-    def runfunc(self) -> Optional[Callable]:
-        return self.runfunc
-
-    @runfunc.setter
-    def runfunc(self, func: Callable) -> None:
-        self.runfunc = func
-    """
+    # def __del__(self):
+    #     print(f'deleted stagetype {self._stage_type}')
 
     @property
     def stage_type(self) -> StageType:
@@ -105,8 +104,12 @@ class Stage:
     def ancestors(self) -> Dict:
         return self._ancestors
 
+    @ancestors.setter
+    def ancestors(self, ancestors: Dict) -> None:
+        self._ancestors = ancestors
+
     def complete(self) -> bool:
-        return self._output_files is not None
+        return self._complete
 
     def add_input_file(self, file) -> None:
         if self._input_files is None:
@@ -131,12 +134,15 @@ class Stage:
             if self._input_files is None:
                 raise NoInputFileException(f'Tried to run stage of type {self._stage_type} which requires at least one input file, but it was not set.')
 
+        # bind the func to this object with MethodType so self resolves as if
+        # it were a member function
+        self._complete = True
         func = MethodType(self.runfunc, self)
         self._output_files = func(self.fcl, self._input_files, self.run_dir)
 
-    def clean(self) -> None:
-        """Delete the output file on disk."""
-        self._output_files = None
+    # def clean(self) -> None:
+    #     """Delete the output file on disk."""
+    #     self._output_files = None
 
     def add_ancestors(self, stages: List) -> None:
         """Add a list of known prior stages (ancestors) to this one."""
@@ -154,7 +160,6 @@ class Workflow:
     """
     Collection of stages and order to run the stages
     fills in the gaps between inputs and outputs
-
     """
 
     @staticmethod
@@ -182,7 +187,7 @@ class Workflow:
                 else:
                     self._default_fcls[k] = v
 
-        self._stages = []
+        # self._stages = []
         self._run_dir = run_dir
         self._default_runfunc = runfunc
         if self._default_runfunc is None:
@@ -190,7 +195,7 @@ class Workflow:
 
     def add_final_stage(self, stage: Stage):
         """Add the final stage to a workflow."""
-        self._stages.append(stage)
+        # self._stages.append(stage)
 
     def run(self):
         """Run the workflow by individually running the added stages."""
@@ -213,16 +218,17 @@ class Workflow:
             stage.runfunc = self._default_runfunc
 
         # some stage types should not have any parents
-        if stage.stage_type in [StageType.DECODE, StageType.GEN]:
+        if stage.stage_type == StageType.GEN:
             stage.run()
             return
 
-        # scrub stage can take a reco1 input file or have a reco1 parent stage
-        if stage.stage_type == StageType.SCRUB and stage.input_files is not None:
+        # if we have our inputs already, can run
+        if stage.input_files is not None:
             stage.run()
             return
 
-        # stages with parents. Use default order if not already set
+        # no inputs, let's try to get them
+        # Use default order if not already set
         if stage.stage_order is None:
             stage.stage_order = self._stage_order
 
@@ -232,7 +238,9 @@ class Workflow:
             # also OK to use strings
             stage_idx = stage.stage_order.index(stage.stage_type.value)
         parent_type = stage.stage_order[stage_idx - 1]
+
         # assume user wants us to build the ancestry map if the parent type doesn't exist
+        # just add one parent stage
         if parent_type not in stage.ancestors:
             parent_stage = Stage(parent_type)
 
@@ -248,7 +256,10 @@ class Workflow:
             stage.add_ancestors([parent_stage])
 
         # check to make sure the parents have been run before running this stage
-        for a in stage.ancestors[parent_type]:
+        # note: we use a while loop + pop so that this stage doesn't hang on to
+        # references to stages that have already been run
+        while stage.ancestors[parent_type]:
+            a = stage.ancestors[parent_type].pop()
             # copy defaults as needed
             if a.stage_order is None:
                 a.stage_order = stage.stage_order
@@ -298,7 +309,7 @@ class WorkflowExecutor:
 
     def execute(self):
         self.setup_workflow()
-        self.workflow.run()
+        # self.workflow.run()
 
 
     def setup_workflow(self):

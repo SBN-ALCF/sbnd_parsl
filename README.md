@@ -67,7 +67,8 @@ if __name__ == '__main__':
     main(settings)
 ```
 
-Running the above code will print:
+Running the above code will print some dummy output showing the sequence of
+commands required to generate the `DETSIM` stage:
 ```
 lar -c gen.fcl  --output output/gen.root
 lar -c g4.fcl -s output/gen.root --output output/g4.root
@@ -118,3 +119,25 @@ defined in the global scope. `sbnd_parsl` sets up the appropriate bindings at
 runtime so that `runfunc` can access the member variables and functions of the
 `Stage` it is bound to. This is useful to add logic based on the stage's type
 or `.fcl` file.
+
+### Passing extra arguments to `runfunc`
+
+You can extend `runfunc` with arbitrary arguments while preserving the function
+signature using `functools.partial`. Below, we modify `runfunc` from the
+original example to pass the `WorkflowExecutor` object as an extra argument.
+This allows us to access the user settings within `runfunc`:
+
+```Python
+import functools
+
+def my_runfunc(self, fcl, input_files, output_dir, executor):
+    output_filepath = executor.output_dir
+    ...
+
+class SimpleWorkflowExecutor(WorkflowExecutor):
+    ...
+
+    def setup_workflow(self):
+        ...
+>>>     s.runfunc = functools.partial(my_runfunc, executor=self) 
+```
