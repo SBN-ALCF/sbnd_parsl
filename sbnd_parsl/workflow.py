@@ -25,8 +25,12 @@ and what you want, automatically filling in intermediate steps as needed.
 """
 
 import os
+import sys
 import json
+import time
 from types import MethodType
+import itertools
+from collections import deque
 
 from enum import Enum, auto
 from pathlib import Path
@@ -39,11 +43,13 @@ from sbnd_parsl.utils import create_default_useropts, create_parsl_config
 class NoInputFileException(Exception):
     pass
 
-
 class NoFclFileException(Exception):
     pass
 
 class WorkflowException(Exception):
+    pass
+
+class StageAncestorException(Exception):
     pass
 
 
@@ -80,7 +86,8 @@ class Stage:
         self._complete = False
         self._input_files = None
         self._output_files = None
-        self._ancestors = {}
+        # self._ancestors = {}
+        self._parents = []
         # print(f'constructed stagetype {self._stage_type}')
 
     # def __del__(self):
@@ -93,6 +100,7 @@ class Stage:
     @property
     def output_files(self) -> List:
         if self._output_files is None:
+            print(f'Warning: Running stage of type {self.stage_type} via output_files method')
             self.run()
         return self._output_files
 
@@ -101,13 +109,26 @@ class Stage:
         return self._input_files
 
     @property
-    def ancestors(self) -> Dict:
-        return self._ancestors
+    def parent_type(self) -> Optional[StageType]:
+        """Return the stage type of the stage before this one."""
+        parent_idx = self.stage_order.index(self.stage_type) - 1
+        if parent_idx < 0:
+            return None
+        return self.stage_order[parent_idx]
 
-    @ancestors.setter
-    def ancestors(self, ancestors: Dict) -> None:
-        self._ancestors = ancestors
+    # @property
+    # def ancestors(self) -> Dict:
+    #     return self._ancestors
 
+    # @ancestors.setter
+    # def ancestors(self, ancestors: Dict) -> None:
+    #     self._ancestors = ancestors
+
+    @property
+    def parents(self) -> List:
+        return self._parents
+
+    @property
     def complete(self) -> bool:
         return self._complete
 
@@ -123,6 +144,11 @@ class Stage:
         # must specify rerun option to avoid calling runfunc multiple times!
         if self._output_files is not None and not rerun:
             return
+
+        # ideally will delete references to the parents once they are run
+        if self._parents:
+            print('Warning: Running a stage while it still has references to its parent stage(s).')
+
 
         if self.fcl is None:
             raise NoFclFileException(f'Attempt to run stage {self._stage_type} with no fcl provided and no default')
@@ -144,16 +170,32 @@ class Stage:
     #     """Delete the output file on disk."""
     #     self._output_files = None
 
-    def add_ancestors(self, stages: List) -> None:
-        """Add a list of known prior stages (ancestors) to this one."""
+    # def add_ancestors(self, stages: List) -> None:
+    #     """Add a list of known prior stages (ancestors) to this one."""
+    #     if self._stage_type == StageType.GEN:
+    #         raise StageAncestorException("Tried to add ancestor to a GEN stage")
+
+    #     if not isinstance(stages, list):
+    #         stages = [stages]
+
+    #     for s in stages:
+    #         try: 
+    #             self._ancestors[s.stage_type].append(s)
+    #         except KeyError:
+    #             self._ancestors[s.stage_type] = [s]
+
+    def add_parents(self, stages: List) -> None:
+        """Add a list of known prior stages to this one."""
         if not isinstance(stages, list):
             stages = [stages]
 
         for s in stages:
+            # if s.stage_type != self.parent_type:
+            #     raise StageAncestorException(f"Tried to add stage of type {s.stage_type} as a parent to a stage with type {stage.stage_type}")
             try: 
-                self._ancestors[s.stage_type].append(s)
+                self._parents.append(s)
             except KeyError:
-                self._ancestors[s.stage_type] = [s]
+                self._parents = [s]
 
 
 class Workflow:
@@ -192,18 +234,40 @@ class Workflow:
         self._default_runfunc = runfunc
         if self._default_runfunc is None:
             self._default_runfunc = Workflow.default_runfunc
+        self._iterators = deque()
 
     def add_final_stage(self, stage: Stage):
         """Add the final stage to a workflow."""
-        # self._stages.append(stage)
+        self._iterators.append(self.run_stage(stage))
 
-    def run(self):
-        """Run the workflow by individually running the added stages."""
-        for s in self._stages:
-            self.run_stage(s)
+    def get_next_task(self, mode='cycle'):
+        """
+        Run the workflow by individually running the added stages. Can either
+        cycle through end stages (grab one task from each stage at a time) or
+        not (grab all tasks from first stage before continuing)
+        """
+        while self._iterators:
+            # remove 
+            iterator = self._iterators.popleft()
+            try:
+                next(iterator)
+                # put back if not done. Either at the back of the deque or in place
+                if mode == 'cycle':
+                    self._iterators.append(iterator)
+                else:
+                    self._iterators.appendleft(iterator)
+                yield
+            except StopIteration:
+                print(f'no more tasks for workflow stage')
+        return
 
     def run_stage(self, stage: Stage):
-        """Run an individual stage, recursing to parent stages as necessary."""
+        """Run an individual stage, recursing to parent stages as necessary.
+        Note that this is a generator: Call next(Workflow.run_stage(stage)) to
+        get the next task."""
+        # this raises StopIteration
+        if stage.complete:
+            return
 
         # fill any un-specified components with workflow defaults
         if stage.fcl is None:
@@ -220,70 +284,62 @@ class Workflow:
         # some stage types should not have any parents
         if stage.stage_type == StageType.GEN:
             stage.run()
-            return
+            yield
 
         # if we have our inputs already, can run
         if stage.input_files is not None:
             stage.run()
-            return
+            yield
 
         # no inputs, let's try to get them
         # Use default order if not already set
         if stage.stage_order is None:
             stage.stage_order = self._stage_order
-
-        try:
-            stage_idx = stage.stage_order.index(stage.stage_type)
-        except ValueError:
-            # also OK to use strings
-            stage_idx = stage.stage_order.index(stage.stage_type.value)
-        parent_type = stage.stage_order[stage_idx - 1]
-
-        # assume user wants us to build the ancestry map if the parent type doesn't exist
-        # just add one parent stage
-        if parent_type not in stage.ancestors:
-            parent_stage = Stage(parent_type)
+        
+        if not stage.parents:
+            # no inputs and no parents, let's create a parent stage
+            parent_stage = Stage(stage.parent_type)
+            # print(f'creating stage of type {stage.parent_type} from {stage.stage_type}')
 
             # parent will inherit run dir and runfunc and stage order
             parent_stage.run_dir = stage.run_dir
             parent_stage.runfunc = stage.runfunc
             parent_stage.stage_order = stage.stage_order
+            stage.add_parents(parent_stage)
 
-            # copy over the known ancestors to this stage too
-            for a in stage.ancestors.values():
-                parent_stage.add_ancestors(a)
+        for parent in stage.parents:
+            # if parent was already set but not initialized, initialize it here
+            if parent.stage_order is None:
+                parent.stage_order = stage.stage_order
+            if parent.run_dir is None:
+                parent.run_dir = stage.run_dir
+            if parent.runfunc is None:
+                parent.runfunc = stage.runfunc
 
-            stage.add_ancestors([parent_stage])
-
-        # check to make sure the parents have been run before running this stage
-        # note: we use a while loop + pop so that this stage doesn't hang on to
-        # references to stages that have already been run
-        while stage.ancestors[parent_type]:
-            a = stage.ancestors[parent_type].pop()
-            # copy defaults as needed
-            if a.stage_order is None:
-                a.stage_order = stage.stage_order
-            if a.run_dir is None:
-                a.run_dir = stage.run_dir
-            if a.runfunc is None:
-                a.runfunc = stage.runfunc
-
-            self.run_stage(a)
-            for f in a.output_files:
+            # run parent's generator until we're done
+            while not parent.complete:
+                next(self.run_stage(parent))
+                yield
+            
+        while stage.parents:
+            parent = stage.parents.pop()
+            for f in parent.output_files:
                 stage.add_input_file(f)
 
-        # now this stage is good to go!
         stage.run()
+        yield
+        
 
 
 class WorkflowExecutor: 
-    """Class to wrap settings and workflow objects."""
+    """Class to wrap settings and workflow objects, and manage task submission."""
     def __init__(self, settings: json):
         self.larsoft_opts = settings['larsoft']
 
         self.run_opts = settings['run']
         self.output_dir = Path(self.run_opts['output'])
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.max_futures = self.run_opts['max_futures']
 
         self.fcl_dir = Path(self.run_opts['fclpath'])
         self.fcls = settings['fcls']
@@ -308,11 +364,64 @@ class WorkflowExecutor:
 
 
     def execute(self):
-        self.setup_workflow()
-        # self.workflow.run()
+        """
+        Run many copies of a single workflow. Workflow.run() method should
+        yield each time a stage is executed for efficient task submission,
+        i.e., we'll get the first tasks from each workflow first, instead of
+        all the tasks from workflow 0, then all the tasks from workflow 1, etc.
+        Use itertools.cycle() to keep looping over all workflows until all
+        tasks are submitted.
+        """
+
+        nsubruns = self.run_opts['nsubruns']
+
+        # generator madness...
+        # we'll cycle over indices until all tasks are submitted, taking one
+        # task from each subrun at a time. This ensures we get the parsl
+        # futures in the "correct" order: Futures without dependencies first,
+        # then dependencies later
+        idx_cycle = itertools.cycle(range(nsubruns))
+        wfs = []
+        skip_idx = set()
+
+        while len(skip_idx) < nsubruns:
+            idx = next(idx_cycle)
+            if idx in skip_idx:
+                continue
+
+            try:
+                wf = wfs[idx]
+            except IndexError:
+                wf = self.setup_single_workflow(idx)
+                wfs.append(wf)
+
+            # rate-limit the number of concurrent futures to avoid using too
+            # much memory on login nodes
+            while len(self.futures) > self.max_futures:
+                self.get_task_results()
+                print(f'Waiting: Current futures={len(self.futures)}')
+                time.sleep(10)
+
+            try:
+                next(wf.get_next_task())
+            except StopIteration:
+                skip_idx.add(idx)
+        
+        while len(self.futures) > 0:
+            self.get_task_results()
+            time.sleep(10)
 
 
-    def setup_workflow(self):
+    def get_task_results(self):
+        done_futures = [f for f in self.futures if f.done()]
+        for f in done_futures:
+            try:
+                print(f'[SUCCESS] task {f.tid} {f.filepath} {f.result()}')
+            except Exception as e:
+                print(f'[FAILED] task {f.tid} {f.filepath}')
+            self.futures.remove(f)
+
+    def setup_single_workflow(self, iteration: int):
         pass
 
 

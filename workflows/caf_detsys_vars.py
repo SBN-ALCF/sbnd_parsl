@@ -163,6 +163,7 @@ class CAFFromGenDetsysExecutor(WorkflowExecutor):
                                 StageType.RECO1, StageType.RECO2, StageType.CAF]
 
 
+    '''
     def setup_workflow(self):
         """Run the single workflow many times."""
         nsubruns = self.run_opts['nsubruns']
@@ -179,9 +180,10 @@ class CAFFromGenDetsysExecutor(WorkflowExecutor):
                     self.futures.remove(f)
                 print(f'Waiting: Current futures={len(self.futures)}')
                 time.sleep(10)
+    '''
 
 
-    def _run_single_workflow(self, iteration: int):
+    def setup_single_workflow(self, iteration: int):
         """Create the workflow object with defaults for the CV, then add all the
         necessary variation stages and ancestry."""
         cv_dir = self.output_dir / 'cv'
@@ -219,10 +221,10 @@ class CAFFromGenDetsysExecutor(WorkflowExecutor):
             s1 = Stage(StageType.RECO1)
             s2 = Stage(StageType.RECO2)
             s2.run_dir = get_subrun_dir(cv_dir, inst)
-            s2.add_ancestors(s1)
+            s2.add_parents(s1)
 
             # also add the reco2 stage to the CV caf stage
-            s.add_ancestors(s2)
+            s.add_parents(s2)
 
             # scrub stage for variations: takes reco1 from CV as input
             # note: manually set runfunc and subrun dir to CV, since
@@ -230,7 +232,7 @@ class CAFFromGenDetsysExecutor(WorkflowExecutor):
             s3 = Stage(StageType.SCRUB, stage_order=self.scrub_stage_order)
             s3.runfunc = cv_runfunc
             s3.run_dir = get_subrun_dir(cv_dir, inst)
-            s3.add_ancestors(s1)
+            s3.add_parents(s1)
 
             for var, svar in var_caf_stages.items():
                 # variation fcl
@@ -238,28 +240,29 @@ class CAFFromGenDetsysExecutor(WorkflowExecutor):
                 # we enumerate all of them
                 s4 = Stage(StageType.G4, stage_order=self.var_stage_order)
                 s4.fcl = self.fcls[var]['g4']
-                s4.add_ancestors(s3)
+                s4.add_parents(s3)
 
                 s5 = Stage(StageType.DETSIM, stage_order=self.var_stage_order)
                 s5.fcl = self.fcls[var]['detsim']
-                s5.add_ancestors(s4)
+                s5.add_parents(s4)
 
                 s6 = Stage(StageType.RECO1, stage_order=self.var_stage_order)
                 s6.fcl = self.fcls[var]['reco1']
-                s6.add_ancestors(s5)
+                s6.add_parents(s5)
 
                 s7 = Stage(StageType.RECO2, stage_order=self.var_stage_order)
                 s7.fcl = self.fcls[var]['reco2']
                 s7.run_dir = get_subrun_dir(var_dirs[var], inst)
-                s7.add_ancestors(s6)
+                s7.add_parents(s6)
 
                 # finally add the variation built from scrub stage to the
                 # variation caf. workflow will fill in the other stages
-                svar.add_ancestors(s7)
-            
-        workflow.run_stage(s)
+                svar.add_parents(s7)
+ 
+        workflow.add_final_stage(s)
         for svar in var_caf_stages.values():
-            workflow.run_stage(svar)
+            workflow.add_final_stage(svar)
+        return workflow
 
 
 def get_subrun_dir(prefix: pathlib.Path, subrun: int):
