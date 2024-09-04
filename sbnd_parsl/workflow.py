@@ -145,9 +145,9 @@ class Stage:
         if self._output_files is not None and not rerun:
             return
 
-        # ideally will delete references to the parents once they are run
+        # make sure we delete references to the parents once they are run
         if self._parents:
-            print('Warning: Running a stage while it still has references to its parent stage(s).')
+            raise RuntimeError(f'Attempt to run stage {self._stage_type} while it still holds references to its parents')
 
 
         if self.fcl is None:
@@ -170,26 +170,15 @@ class Stage:
     #     """Delete the output file on disk."""
     #     self._output_files = None
 
-    # def add_ancestors(self, stages: List) -> None:
-    #     """Add a list of known prior stages (ancestors) to this one."""
-    #     if self._stage_type == StageType.GEN:
-    #         raise StageAncestorException("Tried to add ancestor to a GEN stage")
-
-    #     if not isinstance(stages, list):
-    #         stages = [stages]
-
-    #     for s in stages:
-    #         try: 
-    #             self._ancestors[s.stage_type].append(s)
-    #         except KeyError:
-    #             self._ancestors[s.stage_type] = [s]
-
     def add_parents(self, stages: List) -> None:
         """Add a list of known prior stages to this one."""
         if not isinstance(stages, list):
             stages = [stages]
 
         for s in stages:
+            # TODO error if we try to add a parent of the wrong type; this
+            # requires knowing stage order but user code lets the workflow fill
+            # it in, so may be None
             # if s.stage_type != self.parent_type:
             #     raise StageAncestorException(f"Tried to add stage of type {s.stage_type} as a parent to a stage with type {stage.stage_type}")
             try: 
@@ -229,7 +218,6 @@ class Workflow:
                 else:
                     self._default_fcls[k] = v
 
-        # self._stages = []
         self._run_dir = run_dir
         self._default_runfunc = runfunc
         if self._default_runfunc is None:
@@ -237,7 +225,7 @@ class Workflow:
         self._iterators = deque()
 
     def add_final_stage(self, stage: Stage):
-        """Add the final stage to a workflow."""
+        """Add the final stage to the workflow as a generator expression."""
         self._iterators.append(self.run_stage(stage))
 
     def get_next_task(self, mode='cycle'):
@@ -381,7 +369,7 @@ class WorkflowExecutor:
         # futures in the "correct" order: Futures without dependencies first,
         # then dependencies later
         idx_cycle = itertools.cycle(range(nsubruns))
-        wfs = []
+        wfs = [None for _ in range(nsubruns)]
         skip_idx = set()
 
         while len(skip_idx) < nsubruns:
@@ -389,11 +377,10 @@ class WorkflowExecutor:
             if idx in skip_idx:
                 continue
 
-            try:
-                wf = wfs[idx]
-            except IndexError:
+            wf = wfs[idx]
+            if wf is None:
                 wf = self.setup_single_workflow(idx)
-                wfs.append(wf)
+                wfs[idx] = wf
 
             # rate-limit the number of concurrent futures to avoid using too
             # much memory on login nodes
@@ -406,6 +393,9 @@ class WorkflowExecutor:
                 next(wf.get_next_task())
             except StopIteration:
                 skip_idx.add(idx)
+
+                # let garbage collection happen
+                wfs[idx] = None
         
         while len(self.futures) > 0:
             self.get_task_results()
@@ -426,73 +416,5 @@ class WorkflowExecutor:
 
 
 if __name__ == '__main__':
-    # describe what you have and what you want
-    # below we state that we want some reco2 files. The inputs are scrubbed
-    # reco1 files, and they should be processed with a special fcl at the g4
-    # stage. We define the workflow stage order, and provide some defaults
-
-    stage_order = (StageType.SCRUB, StageType.G4, StageType.DETSIM, StageType.RECO1, StageType.RECO2)
-    # stage_order = (StageType.GEN, StageType.G4, StageType.DETSIM, StageType.RECO1, StageType.RECO2, StageType.CAF)
-    default_fcls = {
-        StageType.GEN: 'gen.fcl',
-        StageType.SCRUB: 'scrub.fcl',
-        StageType.G4: 'g4.fcl',
-        StageType.DETSIM: 'detsim.fcl',
-        StageType.RECO1: 'reco1.fcl',
-        StageType.RECO2: 'reco2.fcl',
-        StageType.CAF: 'caf.fcl',
-    }
-    wf = Workflow(stage_order, default_fcls, run_dir='../')
-
-    for i in range(10):
-        # define your inputs
-        # s1 = Stage(StageType.SCRUB)
-        # s1.add_input_file(f'reco1_{i:02d}.root')
-        # s2 = Stage(StageType.G4, fcl='override.fcl')
-        # s2.add_ancestors([s1])
-
-        # assign them to your final stage. OK to leave gaps
-        s2a = Stage(StageType.RECO2)
-        s2b = Stage(StageType.RECO2)
-        s3 = Stage(StageType.CAF)
-        s3.add_ancestors([s2a, s2b])
-
-        # add final stage to the workflow. Workflow will fill in any gaps using
-        # the order and default fcls
-        wf.add_final_stage(s3)
-
-    # run all stages
-    wf.run()
-
-
-
-
-if __name__ == '__main__':
-    stage_order = (StageType.SCRUB, StageType.G4, StageType.DETSIM, \
-                   StageType.RECO1, StageType.RECO2, StageType.CAF)
-    default_fcls = {
-        StageType.SCRUB: 'scrub.fcl',
-        StageType.G4: 'g4.fcl',
-        StageType.DETSIM: 'detsim.fcl',
-        StageType.RECO1: 'reco1.fcl',
-        StageType.RECO2: 'reco2.fcl',
-        StageType.CAF: 'caf.fcl',
-    }
-
-    wf = Workflow(stage_order, default_fcls, run_dir='../')
-
-    variations = ['g4_var1.fcl', 'g4_var2.fcl']
-    s1 = Stage(StageType.SCRUB)
-    s1.add_input_file('reco1_file.root')
-
-    for var_fcl in variations:
-        s2 = Stage(StageType.G4)
-        s2.fcl = var_fcl
-        s2.add_ancestors(s1)
-
-        s3 = Stage(StageType.RECO2)
-        s3.add_ancestors(s2)
-
-        wf.add_final_stage(s3)
-
-    wf.run()
+    # TODO demo
+    pass
