@@ -1,0 +1,14 @@
+{
+    "run": {
+        "output": "/lus/eagle/projects/neutrinoGPU/gputnam/MCP2024BTestSpine"
+    },
+    "container": "/lus/grand/projects/neutrinoGPU/software/spine/larcv2_ub20.04-cuda12.1-pytorch2.2.1-larndsim.sif",
+    "config": "/lus/grand/projects/neutrinoGPU/software/spine/configs/icarus_full_chain_240719.cfg",
+    "inputs": "/lus/grand/projects/neutrinoGPU/software/spine/inputs/icarus_test_list.txt",
+    "queue": {
+        "queue": "debug",
+        "walltime": "1:00:00",
+        "nodes_per_block": 1
+    },
+    "metadata": {}
+}
