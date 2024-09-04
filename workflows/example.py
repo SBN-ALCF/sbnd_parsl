@@ -25,7 +25,7 @@ class SimpleWorkflowExecutor(WorkflowExecutor):
         # workflow will automatically fill in g4 and gen stages, with
         # run_dir inherited from detsim stage
         workflow.add_final_stage(s)
-        # workflow.add_final_stage(s2)
+        workflow.add_final_stage(s2)
         return workflow
 
 

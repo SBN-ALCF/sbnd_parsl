@@ -14,8 +14,9 @@ from parsl.app.app import bash_app
 
 from sbnd_parsl.workflow import StageType, Stage, Workflow, WorkflowExecutor
 from sbnd_parsl.metadata import MetadataGenerator
-from sbnd_parsl.templates import SINGLE_FCL_TEMPLATE, CAF_TEMPLATE, SINGLE_FCL_TEMPLATE_SPACK
-
+from sbnd_parsl.templates import SINGLE_FCL_TEMPLATE, CAF_TEMPLATE, \
+    SINGLE_FCL_TEMPLATE_SPACK
+from sbnd_parsl.utils import hash_name
 
 @bash_app(cache=True)
 def fcl_future(workdir, stdout, stderr, template, larsoft_opts, inputs=[], outputs=[], pre_job_hook='', post_job_hook=''):
@@ -31,6 +32,55 @@ def fcl_future(workdir, stdout, stderr, template, larsoft_opts, inputs=[], outpu
     )
 
 
+def runfunc(self, fcl, input_files, run_dir, var_name, executor):
+    """Method bound to each Stage object and run during workflow execution."""
+
+    fcl_fullpath = executor.fcl_dir / fcl
+    inputs = [str(fcl_fullpath), None]
+    if input_files is not None:
+        inputs = [str(fcl_fullpath)] + input_files
+
+    run_dir.mkdir(parents=True, exist_ok=True)
+    output_dir = executor.output_dir / var_name / self.stage_type.value
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    output_filename = ''.join([
+        str(self.stage_type.value), '-', var_name, '-',
+        hash_name(os.path.basename(fcl) + executor.name_salt + str(executor.lar_run_counter)),
+        ".root"
+    ])
+    executor.lar_run_counter += 1
+
+    output_filepath = output_dir / output_filename
+    mg_cmd = executor.meta[var_name].run_cmd(
+        output_filename + '.json', os.path.basename(fcl), check_exists=False)
+
+    if self.stage_type == StageType.GEN:
+        executor.unique_run_number += 1
+        run_number = 1 + (executor.unique_run_number // 100)
+        subrun_number = executor.unique_run_number % 100
+        mg_cmd = '\n'.join([mg_cmd,
+            f'echo "source.firstRun: {run_number}" >> {os.path.basename(fcl)}',
+            f'echo "source.firstSubRun: {subrun_number}" >> {os.path.basename(fcl)}'
+        ])
+
+    future = fcl_future(
+        workdir = str(run_dir),
+        stdout = str(run_dir / output_filename.replace(".root", ".out")),
+        stderr = str(run_dir / output_filename.replace(".root", ".err")),
+        template = SINGLE_FCL_TEMPLATE,
+        larsoft_opts = executor.larsoft_opts,
+        inputs = inputs,
+        outputs = [File(str(output_filepath))],
+        pre_job_hook = mg_cmd
+    )
+
+    # this modifies the list passed in by WorkflowExecutor
+    executor.futures.append(future.outputs[0])
+
+    return future.outputs
+
+
 class Reco2FromGenExecutor(WorkflowExecutor):
     """Execute a Gen -> G4 -> Detsim -> Reco1 -> Reco2 workflow from user settings."""
     def __init__(self, settings: json):
@@ -39,56 +89,12 @@ class Reco2FromGenExecutor(WorkflowExecutor):
         self.unique_run_number = 0
         self.meta = MetadataGenerator(settings['metadata'], self.fcls, defer_check=True)
         self.stage_order = [StageType.from_str(key) for key in self.fcls.keys()]
+        self.subruns_per_caf = settings['workflow']['subruns_per_caf']
 
-    def setup_workflow(self):
-        self.workflow = Workflow(self.stage_order, default_fcls=self.fcls)
-        nsubruns = self.run_opts['nsubruns']
-        for i in range(nsubruns):
-            # define the function to run at each stage
-            def runfunc(fcl, input_files, output_dir):
-                """
-                Submit a future for this stage and return the Parsl File object
-                for this stage's output. This function is called by each stage
-                object, and sets the stage's output file.
-                """
-
-                fcl_fullpath = self.fcl_dir / fcl
-                inputs = [str(fcl_fullpath), None]
-                if input_files is not None:
-                    inputs = [str(fcl_fullpath)] + input_files
-
-                output_dir.mkdir(parents=True, exist_ok=True)
-                output_filename = os.path.basename(fcl).replace(".fcl", ".root")
-                output_filepath = output_dir / pathlib.Path(output_filename)
-                output_file = [File(str(output_filepath))]
-
-                mg_cmd = self.meta.run_cmd(os.path.basename(fcl), check_exists=False)
-
-                idx = [self.fcls[m.value] for m in self.stage_order].index(fcl)
-                if idx == 0:
-                    # increment the event number and subrun number for each gen stage file
-                    self.unique_run_number += 1
-                    run_number = 1 + (self.unique_run_number // 100)
-                    subrun_number = self.unique_run_number % 100
-                    mg_cmd = '\n'.join([mg_cmd,
-                        f'echo "source.firstRun: {run_number}" >> {os.path.basename(fcl)}',
-                        f'echo "source.firstSubRun: {subrun_number}" >> {os.path.basename(fcl)}'
-                    ])
-
-                future = fcl_future(
-                    workdir = str(output_dir),
-                    stdout = str(output_dir / f'larStage{idx}.out'),
-                    stderr = str(output_dir / f'larStage{idx}.err'),
-                    template = SINGLE_FCL_TEMPLATE,
-                    larsoft_opts = self.larsoft_opts,
-                    inputs = inputs,
-                    outputs = output_file,
-                    pre_job_hook = mg_cmd
-                )
-                self.futures.append(future.outputs[0])
-
-                return future.outputs
-
+    def setup_single_workflow(self, iteration: int):
+        workflow = Workflow(self.stage_order, default_fcls=self.fcls)
+        for i in range(self.subruns_per_caf):
+            inst = iteration * self.subruns_per_caf + i
             # create reco2 file from MC, only need to specify the last stage
             # since there are no inputs
             s = Stage(StageType.RECO2)
@@ -96,7 +102,8 @@ class Reco2FromGenExecutor(WorkflowExecutor):
             # each reco2 file will have its own directory
             s.run_dir = get_subrun_dir(self.output_dir, i)
             s.runfunc = runfunc
-            self.workflow.add_final_stage(s)
+            workflow.add_final_stage(s)
+        return workflow
 
 
 def get_subrun_dir(prefix: pathlib.Path, subrun: int):

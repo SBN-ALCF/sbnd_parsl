@@ -30,7 +30,6 @@ import time
 import json
 import pathlib
 import functools
-from types import MethodType
 from typing import Dict, List
 
 import parsl
@@ -161,26 +160,6 @@ class CAFFromGenDetsysExecutor(WorkflowExecutor):
         # the stage order for the variations
         self.var_stage_order = [StageType.SCRUB, StageType.G4, StageType.DETSIM, \
                                 StageType.RECO1, StageType.RECO2, StageType.CAF]
-
-
-    '''
-    def setup_workflow(self):
-        """Run the single workflow many times."""
-        nsubruns = self.run_opts['nsubruns']
-        for i in range(nsubruns):
-            self._run_single_workflow(i)
-            # try to keep number of futures around 10000
-            while len(self.futures) > 10000:
-                done_futures = [f for f in self.futures if f.done()]
-                for f in done_futures:
-                    try:
-                        print(f'[SUCCESS] task {f.tid} {f.filepath} {f.result()}')
-                    except Exception as e:
-                        print(f'[FAILED] task {f.tid} {f.filepath}')
-                    self.futures.remove(f)
-                print(f'Waiting: Current futures={len(self.futures)}')
-                time.sleep(10)
-    '''
 
 
     def setup_single_workflow(self, iteration: int):
