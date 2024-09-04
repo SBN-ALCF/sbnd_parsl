@@ -6,6 +6,7 @@
 import sys, os
 import json
 import pathlib
+import functools
 from typing import Dict, List
 
 import parsl
@@ -32,7 +33,7 @@ def fcl_future(workdir, stdout, stderr, template, larsoft_opts, inputs=[], outpu
     )
 
 
-def runfunc(self, fcl, input_files, run_dir, var_name, executor):
+def runfunc(self, fcl, input_files, run_dir, executor):
     """Method bound to each Stage object and run during workflow execution."""
 
     fcl_fullpath = executor.fcl_dir / fcl
@@ -41,18 +42,18 @@ def runfunc(self, fcl, input_files, run_dir, var_name, executor):
         inputs = [str(fcl_fullpath)] + input_files
 
     run_dir.mkdir(parents=True, exist_ok=True)
-    output_dir = executor.output_dir / var_name / self.stage_type.value
+    output_dir = executor.output_dir / self.stage_type.value
     output_dir.mkdir(parents=True, exist_ok=True)
 
     output_filename = ''.join([
-        str(self.stage_type.value), '-', var_name, '-',
+        str(self.stage_type.value), '-',
         hash_name(os.path.basename(fcl) + executor.name_salt + str(executor.lar_run_counter)),
         ".root"
     ])
     executor.lar_run_counter += 1
 
     output_filepath = output_dir / output_filename
-    mg_cmd = executor.meta[var_name].run_cmd(
+    mg_cmd = executor.meta.run_cmd(
         output_filename + '.json', os.path.basename(fcl), check_exists=False)
 
     if self.stage_type == StageType.GEN:
@@ -87,12 +88,15 @@ class Reco2FromGenExecutor(WorkflowExecutor):
         super().__init__(settings)
 
         self.unique_run_number = 0
+        self.lar_run_counter = 0
         self.meta = MetadataGenerator(settings['metadata'], self.fcls, defer_check=True)
         self.stage_order = [StageType.from_str(key) for key in self.fcls.keys()]
         self.subruns_per_caf = settings['workflow']['subruns_per_caf']
+        self.name_salt = str(settings['run']['seed']) + str(self.output_dir)
 
     def setup_single_workflow(self, iteration: int):
         workflow = Workflow(self.stage_order, default_fcls=self.fcls)
+        runfunc_ = functools.partial(runfunc, executor=self)
         for i in range(self.subruns_per_caf):
             inst = iteration * self.subruns_per_caf + i
             # create reco2 file from MC, only need to specify the last stage
@@ -101,7 +105,7 @@ class Reco2FromGenExecutor(WorkflowExecutor):
 
             # each reco2 file will have its own directory
             s.run_dir = get_subrun_dir(self.output_dir, i)
-            s.runfunc = runfunc
+            s.runfunc = runfunc_
             workflow.add_final_stage(s)
         return workflow
 
