@@ -118,13 +118,6 @@ def get_subrun_dir(prefix: pathlib.Path, subrun: int):
 def main(settings):
     wfe = Reco2FromGenExecutor(settings)
     wfe.execute()
-    print(f'Submitted {len(wfe.futures)} futures.')
-        
-    for f in wfe.futures:
-        try:
-            print(f'[SUCCESS] task {f.tid} {f.filepath} {f.result()}')
-        except Exception as e:
-            print(f'[FAILED] task {f.tid} {f.filepath}')
 
 
 if __name__ == '__main__':
