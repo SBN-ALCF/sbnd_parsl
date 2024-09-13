@@ -1,12 +1,13 @@
 #!/usr/bin/env python
 
-# This workflow generates full MC events, creates a CAF file from the events,
-# then deletes the intermediate output files while saving a certain fraction
+# This workflow generates CAF files only from existing reco2 files
 
 import sys, os
 import json
+import time
 import pathlib
 import functools
+import itertools
 from typing import Dict, List
 
 import parsl
@@ -38,9 +39,8 @@ def runfunc(self, fcl, input_files, run_dir, executor):
     """Method bound to each Stage object and run during workflow execution."""
 
     fcl_fullpath = executor.fcl_dir / fcl
-    inputs = [str(fcl_fullpath), None]
-    if input_files is not None:
-        inputs = [str(fcl_fullpath)] + input_files
+    caf_input_arg = ' '.join([f'{fname}' for fname in input_files])
+    inputs = [str(fcl_fullpath), caf_input_arg]
 
     run_dir.mkdir(parents=True, exist_ok=True)
     output_dir = executor.output_dir / self.stage_type.value
@@ -54,8 +54,8 @@ def runfunc(self, fcl, input_files, run_dir, executor):
     executor.lar_run_counter += 1
 
     output_filepath = output_dir / output_filename
-    mg_cmd = executor.meta.run_cmd(
-        output_filename + '.json', os.path.basename(fcl), check_exists=False)
+    mg_cmd = '' #executor.meta.run_cmd(
+        # output_filename + '.json', os.path.basename(fcl), check_exists=False)
 
     if self.stage_type == StageType.GEN:
         executor.unique_run_number += 1
@@ -70,10 +70,10 @@ def runfunc(self, fcl, input_files, run_dir, executor):
         workdir = str(run_dir),
         stdout = str(run_dir / output_filename.replace(".root", ".out")),
         stderr = str(run_dir / output_filename.replace(".root", ".err")),
-        template = SINGLE_FCL_TEMPLATE,
+        template = CAF_TEMPLATE,
         larsoft_opts = executor.larsoft_opts,
         inputs = inputs,
-        outputs = [File(str(output_filepath))],
+        outputs = [File(output_filename)],
         pre_job_hook = mg_cmd
     )
 
@@ -83,8 +83,8 @@ def runfunc(self, fcl, input_files, run_dir, executor):
     return future.outputs
 
 
-class Reco2FromGenExecutor(WorkflowExecutor):
-    """Execute a Gen -> G4 -> Detsim -> Reco1 -> Reco2 workflow from user settings."""
+class CAFFromReco2Executor(WorkflowExecutor):
+    """Execute a Reco2, ..., Reco2 -> CAF workflow from user settings."""
     def __init__(self, settings: json):
         super().__init__(settings)
 
@@ -95,22 +95,65 @@ class Reco2FromGenExecutor(WorkflowExecutor):
         self.subruns_per_caf = settings['workflow']['subruns_per_caf']
         self.name_salt = str(settings['run']['seed']) + str(self.output_dir)
 
-    def setup_single_workflow(self, iteration: int):
+        self.reco2_path = pathlib.Path(settings['workflow']['reco2_path'])
+
+
+    def execute(self):
+        """Override to create workflows from N files instead of iteration number."""
+
+
+        reco2_files = self.reco2_path.glob('reco2*.root')
+        nsubruns = self.run_opts['nsubruns']
+
+        idx_cycle = itertools.cycle(range(nsubruns))
+        wfs = [None] * nsubruns
+        skip_idx = set()
+
+        while len(skip_idx) < nsubruns:
+            idx = next(idx_cycle)
+            if idx in skip_idx:
+                continue
+
+            wf = wfs[idx]
+            if wf is None:
+                reco2_slice = list(itertools.islice(reco2_files, self.subruns_per_caf))
+                if not reco2_slice:
+                    skip_idx.add(idx)
+                    continue
+                wf = self.setup_single_workflow(idx, reco2_slice)
+                wfs[idx] = wf
+
+            # rate-limit the number of concurrent futures to avoid using too
+            # much memory on login nodes
+            while len(self.futures) > self.max_futures:
+                self.get_task_results()
+                print(f'Waiting: Current futures={len(self.futures)}')
+                time.sleep(10)
+
+            try:
+                next(wf.get_next_task())
+            except StopIteration:
+                skip_idx.add(idx)
+
+                # let garbage collection happen
+                wfs[idx] = None
+        
+        while len(self.futures) > 0:
+            self.get_task_results()
+            time.sleep(10)
+
+    def setup_single_workflow(self, iteration: int, reco2_files: List[pathlib.Path]):
         workflow = Workflow(self.stage_order, default_fcls=self.fcls)
         runfunc_ = functools.partial(runfunc, executor=self)
         s = Stage(StageType.CAF)
         s.run_dir = get_subrun_dir(self.output_dir, iteration)
         s.runfunc = runfunc_
+        if not reco2_files:
+            raise RuntimeError()
 
-        for i in range(self.subruns_per_caf):
-            inst = iteration * self.subruns_per_caf + i
-            # create reco2 file from MC, only need to specify the last stage
-            # since there are no inputs
-            s2 = Stage(StageType.RECO2)
+        for reco2_file in reco2_files:
+            s.add_input_file(str(reco2_file))
 
-            # each reco2 file will have its own directory
-            s2.run_dir = get_subrun_dir(self.output_dir, inst)
-            s.add_parents(s2)
         workflow.add_final_stage(s)
         return workflow
 
@@ -129,7 +172,7 @@ def main(settings):
     parsl.clear()
     parsl.load(parsl_config)
 
-    wfe = Reco2FromGenExecutor(settings, parsl_config)
+    wfe = CAFFromReco2Executor(settings)
     wfe.execute()
 
 

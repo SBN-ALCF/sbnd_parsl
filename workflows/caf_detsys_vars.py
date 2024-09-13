@@ -40,7 +40,8 @@ from sbnd_parsl.workflow import StageType, Stage, Workflow, WorkflowExecutor
 from sbnd_parsl.metadata import MetadataGenerator
 from sbnd_parsl.templates import SINGLE_FCL_TEMPLATE, CAF_TEMPLATE, \
     SINGLE_FCL_TEMPLATE_SPACK
-from sbnd_parsl.utils import hash_name
+from sbnd_parsl.utils import create_default_useropts, create_parsl_config, \
+    hash_name
 
 
 @bash_app(cache=True)
