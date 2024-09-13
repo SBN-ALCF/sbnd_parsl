@@ -166,6 +166,7 @@ def get_subrun_dir(prefix: pathlib.Path, subrun: int):
 def main(settings):
     # parsl
     user_opts = create_default_useropts()
+    user_opts['run_dir'] = str(pathlib.Path(settings['run']['output']) / 'runinfo')
     user_opts.update(settings['queue'])
     parsl_config = create_parsl_config(user_opts)
     print(parsl_config)
