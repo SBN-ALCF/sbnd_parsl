@@ -332,9 +332,6 @@ class WorkflowExecutor:
         self.fcl_dir = Path(self.run_opts['fclpath'])
         self.fcls = settings['fcls']
 
-        self.user_opts["run_dir"] = str(self.output_dir / 'runinfo')
-        print(self.user_opts)
-
         self.futures = []
 
         # workflow

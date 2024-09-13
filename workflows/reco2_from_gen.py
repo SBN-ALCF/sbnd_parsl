@@ -130,7 +130,7 @@ def main(settings):
     parsl.clear()
     parsl.load(parsl_config)
 
-    wfe = Reco2FromGenExecutor(settings, parsl_config)
+    wfe = Reco2FromGenExecutor(settings)
     wfe.execute()
 
 
