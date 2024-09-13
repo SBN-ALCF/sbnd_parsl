@@ -57,6 +57,7 @@ def fcl_future(workdir, stdout, stderr, template, larsoft_opts, inputs=[], outpu
     )
 
 
+
 def runfunc(self, fcl, input_files, run_dir, var_name, executor):
     """Method bound to each Stage object and run during workflow execution."""
 
@@ -250,6 +251,14 @@ def get_subrun_dir(prefix: pathlib.Path, subrun: int):
 
 
 def main(settings):
+    # parsl
+    user_opts = create_default_useropts()
+    user_opts.update(settings['queue'])
+    parsl_config = create_parsl_config(user_opts)
+    print(parsl_config)
+    parsl.clear()
+    parsl.load(parsl_config)
+
     wfe = CAFFromGenDetsysExecutor(settings)
     wfe.execute()
 

@@ -277,7 +277,7 @@ class Workflow:
         # if we have our inputs already, can run
         if stage.input_files is not None:
             stage.run()
-            yield
+            return
 
         # no inputs, let's try to get them
         # Use default order if not already set
@@ -332,19 +332,10 @@ class WorkflowExecutor:
         self.fcl_dir = Path(self.run_opts['fclpath'])
         self.fcls = settings['fcls']
 
-        # parsl
-        self.user_opts = create_default_useropts()
-        self.user_opts.update(settings['queue'])
-
         self.user_opts["run_dir"] = str(self.output_dir / 'runinfo')
         print(self.user_opts)
 
-        self.config = create_parsl_config(self.user_opts)
-        print(self.config)
-
         self.futures = []
-        parsl.clear()
-        parsl.load(self.config)
 
         # workflow
         self.workflow_opts = settings['workflow']
@@ -410,6 +401,7 @@ class WorkflowExecutor:
             except Exception as e:
                 print(f'[FAILED] task {f.tid} {f.filepath}')
             self.futures.remove(f)
+
 
     def setup_single_workflow(self, iteration: int):
         pass

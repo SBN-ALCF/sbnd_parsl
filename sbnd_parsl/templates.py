@@ -145,7 +145,9 @@ singularity run -B /lus/eagle/ -B /grand/ {{container}} <<EOF
     # get the fcls
     set -e
     # Add an optional input file:
-    export lar_cmd="-c $LOCAL_FCL {{lar_args}} {{input}}"
+    export tempfile=$(mktemp)
+    echo "{{input}}" | sed 's/\ /\\n/g' > \$tempfile
+    export lar_cmd="-c $LOCAL_FCL {{lar_args}} -S \$tempfile"
     echo \$lar_cmd
     echo "About to run larsoft"
     lar \$lar_cmd

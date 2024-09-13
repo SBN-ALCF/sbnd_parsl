@@ -97,16 +97,20 @@ class Reco2FromGenExecutor(WorkflowExecutor):
     def setup_single_workflow(self, iteration: int):
         workflow = Workflow(self.stage_order, default_fcls=self.fcls)
         runfunc_ = functools.partial(runfunc, executor=self)
+        s = Stage(StageType.CAF)
+        s.run_dir = get_subrun_dir(self.output_dir, iteration)
+        s.runfunc = runfunc_
+
         for i in range(self.subruns_per_caf):
             inst = iteration * self.subruns_per_caf + i
             # create reco2 file from MC, only need to specify the last stage
             # since there are no inputs
-            s = Stage(StageType.RECO2)
+            s2 = Stage(StageType.RECO2)
 
             # each reco2 file will have its own directory
-            s.run_dir = get_subrun_dir(self.output_dir, i)
-            s.runfunc = runfunc_
-            workflow.add_final_stage(s)
+            s2.run_dir = get_subrun_dir(self.output_dir, inst)
+            s.add_parents(s2)
+        workflow.add_final_stage(s)
         return workflow
 
 
@@ -116,7 +120,15 @@ def get_subrun_dir(prefix: pathlib.Path, subrun: int):
 
 
 def main(settings):
-    wfe = Reco2FromGenExecutor(settings)
+    # parsl
+    user_opts = create_default_useropts()
+    user_opts.update(settings['queue'])
+    parsl_config = create_parsl_config(user_opts)
+    print(parsl_config)
+    parsl.clear()
+    parsl.load(parsl_config)
+
+    wfe = Reco2FromGenExecutor(settings, parsl_config)
     wfe.execute()
 
 
