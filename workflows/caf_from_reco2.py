@@ -46,16 +46,12 @@ def runfunc(self, fcl, input_files, run_dir, executor):
     output_dir = executor.output_dir / self.stage_type.value
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    output_filename = ''.join([
-        str(self.stage_type.value), '-',
-        hash_name(os.path.basename(fcl) + executor.name_salt + str(executor.lar_run_counter)),
-        ".root"
-    ])
+    output_filename = os.path.splitext(os.path.basename(input_files[0]))[0] + '.flat.caf.root'
     executor.lar_run_counter += 1
 
     output_filepath = output_dir / output_filename
-    mg_cmd = '' #executor.meta.run_cmd(
-        # output_filename + '.json', os.path.basename(fcl), check_exists=False)
+    mg_cmd = executor.meta.run_cmd(
+        output_filename + '.json', os.path.basename(fcl), check_exists=False)
 
     if self.stage_type == StageType.GEN:
         executor.unique_run_number += 1
@@ -73,7 +69,7 @@ def runfunc(self, fcl, input_files, run_dir, executor):
         template = CAF_TEMPLATE,
         larsoft_opts = executor.larsoft_opts,
         inputs = inputs,
-        outputs = [File(output_filename)],
+        outputs = [File(output_filepath)],
         pre_job_hook = mg_cmd
     )
 

@@ -145,7 +145,7 @@ singularity run -B /lus/eagle/ -B /grand/ {{container}} <<EOF
     # get the fcls
     set -e
     # Add an optional input file:
-    export tempfile=$(mktemp)
+    export tempfile=inputlist.txt
     echo "{{input}}" | sed 's/\ /\\n/g' > \$tempfile
     export lar_cmd="-c $LOCAL_FCL {{lar_args}} -S \$tempfile"
     echo \$lar_cmd
@@ -157,6 +157,15 @@ singularity run -B /lus/eagle/ -B /grand/ {{container}} <<EOF
     # note: cleanup can cause art to crash, since art tries to clean up too...
     # rm -f RootOutput-*.root
     # rm -f TFileService-*.root
+    first_file=\$(basename \$(head -n 1 \$tempfile) | sed 's/\.root//g')
+    outfile_caf=\$first_file.caf.root
+    outfile_flat_caf=\$first_file.flat.caf.root
+
+
+    mv *.json $(dirname {{output}}) || true
+    mv  *hist*root "$(dirname {{output}})/hists_$(basename {{output}})" || true
+    mv \$outfile_caf $(dirname {{output}}) || true
+    mv \$outfile_flat_caf $(dirname {{output}}) || true
 EOF
 {{post_job_hook}}
 {JOB_POST}
