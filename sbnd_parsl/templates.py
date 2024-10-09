@@ -89,10 +89,6 @@ export GENIE_XSEC_DIR=/grand/neutrinoGPU/software/larsoft/genie_xsec/v3_04_00/NU
 export GENIE_XSEC_KNOTS=250
 export GENIE_XSEC_TUNE=AR23_20i_00_000
 
-echo "Visible GPU Devices:"
-echo $CUDA_VISIBLE_DEVICES
-nvidia-smi
-
 set -e
 echo "Running in: "
 pwd

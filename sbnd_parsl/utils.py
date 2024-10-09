@@ -38,7 +38,6 @@ def create_provider_by_hostname(user_opts):
 
 def create_executor_by_hostname(user_opts, provider):
     hostname = socket.gethostname()
-    print("hostname", hostname)
     if("ngpus" in user_opts.get("select_options", "ngpus=0")):
         ngpus = int(user_opts["select_options"].split("ngpus=",1)[1])
 
