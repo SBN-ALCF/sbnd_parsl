@@ -2,12 +2,13 @@ import socket
 import pathlib
 import hashlib
 
+import ndcctools.work_queue
 from parsl.config import Config
 
 from parsl.addresses import address_by_interface
 from parsl.utils import get_all_checkpoints
 from parsl.providers import PBSProProvider, LocalProvider
-from parsl.executors import HighThroughputExecutor, ThreadPoolExecutor
+from parsl.executors import HighThroughputExecutor, ThreadPoolExecutor, WorkQueueExecutor
 from parsl.launchers import MpiExecLauncher, GnuParallelLauncher
 # from parsl.monitoring.monitoring import MonitoringHub
 
@@ -25,8 +26,10 @@ def create_provider_by_hostname(user_opts):
             max_blocks      = 1,
             walltime        = user_opts.get("walltime", "1:00:00"),
             scheduler_options = '#PBS -l filesystems=home:grand:eagle\n#PBS -l place=scatter',
+            select_options  = user_opts.get("select_options", "ngpus=0"),
             launcher        = MpiExecLauncher(bind_cmd="--cpu-bind"),
-            worker_init     = "module use /soft/modulefiles; module load conda; conda activate /grand/neutrinoGPU/software/parsl-conda-2023-10-04",
+            worker_init     = "module use /soft/modulefiles; module load conda; conda activate wq_sbn",
+            # worker_init     = "module use /soft/modulefiles; module load conda; conda activate /grand/neutrinoGPU/software/parsl-conda-2023-10-04",
         )
         return provider
     else:
@@ -35,8 +38,21 @@ def create_provider_by_hostname(user_opts):
 
 def create_executor_by_hostname(user_opts, provider):
     hostname = socket.gethostname()
+    print("hostname", hostname)
+    if("ngpus" in user_opts.get("select_options", "ngpus=0")):
+        ngpus = int(user_opts["select_options"].split("ngpus=",1)[1])
 
-    if 'polaris' in hostname:
+    if 'polaris' in hostname and ngpus>0:
+        from parsl import WorkQueueExecutor
+        return WorkQueueExecutor(
+                    label="htex",
+                    address=address_by_interface("bond0"),
+                    provider=provider,
+                    worker_options="--gpus 4",
+                    full_debug=True,
+                )
+
+    elif 'polaris' in hostname and ngpus==0:
         from parsl import HighThroughputExecutor
         return HighThroughputExecutor(
                     label="htex",
@@ -52,7 +68,7 @@ def create_executor_by_hostname(user_opts, provider):
                     provider=provider,
                     block_error_handler=False
                 )
-    
+
     else:
         # default: 
         from parsl import ThreadPoolExecutor

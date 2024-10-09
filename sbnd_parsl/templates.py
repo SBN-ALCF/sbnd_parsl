@@ -89,6 +89,10 @@ export GENIE_XSEC_DIR=/grand/neutrinoGPU/software/larsoft/genie_xsec/v3_04_00/NU
 export GENIE_XSEC_KNOTS=250
 export GENIE_XSEC_TUNE=AR23_20i_00_000
 
+echo "Visible GPU Devices:"
+echo $CUDA_VISIBLE_DEVICES
+nvidia-smi
+
 set -e
 echo "Running in: "
 pwd
@@ -99,9 +103,11 @@ echo "Products setup!"
 # get the fcls
 set -e
 # Add an optional input file:
-export lar_cmd="-c $LOCAL_FCL --nevts {{nevts}} --output {{output}} {{lar_args}}"
+export lar_cmd="-c $LOCAL_FCL --output {{output}} {{lar_args}}"
 if [ -f {{input}} ]; then
-    export lar_cmd="\$lar_cmd --source {{input}} "
+    export lar_cmd="$lar_cmd --source {{input}} "
+else
+    export lar_cmd="$lar_cmd --nevts {{nevts}} "
 fi
 echo $lar_cmd
 echo "About to run larsoft"
