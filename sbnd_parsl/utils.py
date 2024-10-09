@@ -28,8 +28,7 @@ def create_provider_by_hostname(user_opts):
             scheduler_options = '#PBS -l filesystems=home:grand:eagle\n#PBS -l place=scatter',
             select_options  = user_opts.get("select_options", "ngpus=0"),
             launcher        = MpiExecLauncher(bind_cmd="--cpu-bind"),
-            worker_init     = "module use /soft/modulefiles; module load conda; conda activate wq_sbn",
-            # worker_init     = "module use /soft/modulefiles; module load conda; conda activate /grand/neutrinoGPU/software/parsl-conda-2023-10-04",
+            worker_init     = "module use /soft/modulefiles; module load conda; conda activate sbn",
         )
         return provider
     else:
