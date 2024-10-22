@@ -21,7 +21,7 @@ from sbnd_parsl.utils import create_default_useropts, create_parsl_config, \
     hash_name
 
 @bash_app(cache=True)
-def fcl_future(workdir, stdout, stderr, template, larsoft_opts, inputs=[], outputs=[], pre_job_hook='', post_job_hook=''):
+def fcl_future(workdir, stdout, stderr, template, larsoft_opts, inputs=[], outputs=[], pre_job_hook='', post_job_hook='', parsl_resource_specification={}):
     """Return formatted bash script which produces each future when executed."""
     return template.format(
         fhicl=inputs[0],
@@ -66,16 +66,28 @@ def runfunc(self, fcl, input_files, run_dir, executor):
         #     f'echo "source.firstSubRun: {subrun_number}" >> {os.path.basename(fcl)}'
         # ])
 
-    future = fcl_future(
-        workdir = str(run_dir),
-        stdout = str(run_dir / output_filename.replace(".root", ".out")),
-        stderr = str(run_dir / output_filename.replace(".root", ".err")),
-        template = SINGLE_FCL_TEMPLATE_SPACK,
-        larsoft_opts = executor.larsoft_opts,
-        inputs = inputs,
-        outputs = [File(str(output_filepath))],
-    )
-
+    if self.stage_type == StageType.DETSIM:
+        future = fcl_future(
+            workdir = str(run_dir),
+            stdout = str(run_dir / output_filename.replace(".root", ".out")),
+            stderr = str(run_dir / output_filename.replace(".root", ".err")),
+            template = SINGLE_FCL_TEMPLATE_SPACK,
+            larsoft_opts = executor.larsoft_opts,
+            inputs = inputs,
+            outputs = [File(str(output_filepath))],
+            parsl_resource_specification = {'cores': 1, 'memory': 1000, 'disk': 1000, 'gpus': 1}
+        )
+    else:
+        future = fcl_future(
+            workdir = str(run_dir),
+            stdout = str(run_dir / output_filename.replace(".root", ".out")),
+            stderr = str(run_dir / output_filename.replace(".root", ".err")),
+            template = SINGLE_FCL_TEMPLATE_SPACK,
+            larsoft_opts = executor.larsoft_opts,
+            inputs = inputs,
+            outputs = [File(str(output_filepath))],
+            parsl_resource_specification = {'cores': 1, 'memory': 1000, 'disk': 1000}
+        )
     # this modifies the list passed in by WorkflowExecutor
     executor.futures.append(future.outputs[0])
 
