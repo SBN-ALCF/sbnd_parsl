@@ -1,7 +1,7 @@
 {
     "run": {
-        "output": "/eagle/neutrinoGPU/spack_workflow/09_91_02_01",
-        "fclpath": "/home/nathanielerowe/sbnd_parsl/fcls/v09_91_02_01",
+        "output": "your_output_dir",
+        "fclpath": "your_fcl_dir",
         "nsubruns": 1,
         "max_futures": 10000,
         "seed": 1234
