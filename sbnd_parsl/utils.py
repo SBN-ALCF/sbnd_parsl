@@ -114,7 +114,6 @@ def create_parsl_config(user_opts):
             executors=[executor],
             checkpoint_files = checkpoints,
             run_dir=user_opts["run_dir"],
-            checkpoint_mode = 'task_exit',
             strategy=user_opts.get("strategy", "simple"),
             retries=user_opts.get("retries", 0),
             app_cache=True,

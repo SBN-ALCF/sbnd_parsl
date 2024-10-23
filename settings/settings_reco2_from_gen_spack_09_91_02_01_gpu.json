@@ -1,6 +1,6 @@
 {
     "run": {
-        "output": "/eagle/neutrinoGPU/spack_workflow/09_91_02_01_gpu",
+        "output": "/eagle/neutrinoGPU/spack_workflow/09_91_02_01_gpu_scaling",
         "fclpath": "/home/nathanielerowe/sbnd_parsl/fcls/v09_91_02_01",
         "nsubruns": 1,
         "max_futures": 10000,
@@ -13,22 +13,22 @@
     "larsoft": {
         "software": "sbndcode",
         "spack_top": "/lus/grand/projects/neutrinoGPU/software/fermi-spack-Jul7/spack", 
-        "version": "09_91_02_01",
+        "version": "09_91_02_01_gpu",
         "nevts": 40,
         "experiment": "sbnd",
         "lar_args" : ""
     },
     "queue": {
-        "queue": "debug",
+        "queue": "debug-scaling",
         "walltime": "1:00:00",
         "select_options": "ngpus=4",
-        "nodes_per_block": 1,
+        "nodes_per_block": 2,
         "allocation": "neutrinoGPU"
     },
     "fcls": {
         "gen": "prodoverlay_corsika_cosmics_proton_genie_rockbox_sce.fcl",
         "g4": "g4_sce_dirt_filter_lite.fcl",
-        "detsim": "detsim_sce_lite_gpu.fcl",
+        "detsim": "detsim_sce_lite.fcl",
         "reco1": "standard_reco1_sbnd.fcl",
         "reco2": "reco2_sce.fcl",
         "caf": "cafmakerjob_sbnd_systtools_and_fluxwgt.fcl"

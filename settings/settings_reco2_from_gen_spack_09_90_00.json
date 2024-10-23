@@ -1,7 +1,7 @@
 {
     "run": {
-        "output": "your_output_dir",
-        "fclpath": "your_fcl_dir",
+        "output": "/eagle/neutrinoGPU/spack_workflow/09_91_02_01",
+        "fclpath": "/home/nathanielerowe/sbnd_parsl/fcls/v09_91_02_01",
         "nsubruns": 1,
         "max_futures": 10000,
         "seed": 1234
@@ -13,7 +13,7 @@
     "larsoft": {
         "software": "sbndcode",
         "spack_top": "/lus/grand/projects/neutrinoGPU/software/fermi-spack-Jul7/spack", 
-        "version": "09_90_00",
+        "version": "09_91_02_01",
         "nevts": 20,
         "experiment": "sbnd",
         "lar_args" : ""
@@ -31,6 +31,6 @@
         "detsim": "standard_detsim_sbnd.fcl",
         "reco1": "standard_reco1_sbnd.fcl",
         "reco2": "standard_reco2_sbnd.fcl",
-	"caf": "cafmakerjob_sbnd_systtools_and_fluxwgt.fcl"
+        "caf": "cafmakerjob_sbnd_systtools_and_fluxwgt.fcl"
     }
 }
