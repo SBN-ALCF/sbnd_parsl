@@ -173,6 +173,55 @@ EOF
 {JOB_POST}
 '''
 
+# spack-ified CAF template
+CAF_TEMPLATE_SPACK = f'''
+{JOB_PRE}
+cd {{workdir}}
+echo "Current directory: "
+pwd
+echo "Current files: "
+ls
+echo "Move fcl."
+cp {{fhicl}} {{workdir}}/
+export LOCAL_FCL=$(basename {{fhicl}})
+
+{{pre_job_hook}}
+echo "Load spack env"
+source {{spack_top}}/share/spack/setup-env.sh
+spack env activate sbndcode-{{version}}_env
+spack load sbndcode
+
+export GENIE_XSEC_GENLIST=Default
+export GENIE_XSEC_EMAX=1000.0
+export GENIE_XSEC_DIR=/grand/neutrinoGPU/software/larsoft/genie_xsec/v3_04_00/NULL/AR2320i00000-k250-e1000
+export GENIE_XSEC_KNOTS=250
+export GENIE_XSEC_TUNE=AR23_20i_00_000
+
+set -e
+echo "Running in: "
+pwd
+echo "Sourcing products area"
+#setup SBNDCODE:
+export EXPERIMENT={{experiment}}
+echo "Products setup!"
+# get the fcls
+set -e
+# Add an optional input file:
+export tempfile=inputlist.txt
+echo "{{input}}" | sed 's/\ /\\n/g' > $tempfile
+export lar_cmd="-c $LOCAL_FCL {{lar_args}} -S $tempfile"
+echo $lar_cmd
+echo "About to run larsoft"
+lar $lar_cmd
+set +e
+
+# Clean up temporary files, if they exist:
+rm -f RootOutput-*.root
+rm -f TFileService-*.root
+{{post_job_hook}}
+{JOB_POST}
+'''
+
 # this template additionally loads sbndata and expects "input" in the form of "-s file1 -s file2 ..."
 SPINE_TEMPLATE = f'''
 {JOB_PRE}

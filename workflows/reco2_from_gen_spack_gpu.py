@@ -15,7 +15,7 @@ from parsl.app.app import bash_app
 
 from sbnd_parsl.workflow import StageType, Stage, Workflow, WorkflowExecutor
 from sbnd_parsl.metadata import MetadataGenerator
-from sbnd_parsl.templates import SINGLE_FCL_TEMPLATE, CAF_TEMPLATE, \
+from sbnd_parsl.templates import SINGLE_FCL_TEMPLATE, CAF_TEMPLATE_SPACK, \
     SINGLE_FCL_TEMPLATE_SPACK
 from sbnd_parsl.utils import create_default_useropts, create_parsl_config, \
     hash_name
@@ -66,28 +66,58 @@ def runfunc(self, fcl, input_files, run_dir, executor):
         #     f'echo "source.firstSubRun: {subrun_number}" >> {os.path.basename(fcl)}'
         # ])
 
+    parsl_resource_specification = {'cores': 1, 'memory': 1000, 'disk': 1000}
     if self.stage_type == StageType.DETSIM:
-        future = fcl_future(
-            workdir = str(run_dir),
-            stdout = str(run_dir / output_filename.replace(".root", ".out")),
-            stderr = str(run_dir / output_filename.replace(".root", ".err")),
-            template = SINGLE_FCL_TEMPLATE_SPACK,
-            larsoft_opts = executor.larsoft_opts,
-            inputs = inputs,
-            outputs = [File(str(output_filepath))],
-            parsl_resource_specification = {'cores': 1, 'memory': 1000, 'disk': 1000, 'gpus': 1}
-        )
-    else:
-        future = fcl_future(
-            workdir = str(run_dir),
-            stdout = str(run_dir / output_filename.replace(".root", ".out")),
-            stderr = str(run_dir / output_filename.replace(".root", ".err")),
-            template = SINGLE_FCL_TEMPLATE_SPACK,
-            larsoft_opts = executor.larsoft_opts,
-            inputs = inputs,
-            outputs = [File(str(output_filepath))],
-            parsl_resource_specification = {'cores': 1, 'memory': 1000, 'disk': 1000}
-        )
+        parsl_resource_specification = {'cores': 1, 'memory': 1000, 'disk': 1000, 'gpus': 1}
+
+    future = fcl_future(
+        workdir = str(run_dir),
+        stdout = str(run_dir / output_filename.replace(".root", ".out")),
+        stderr = str(run_dir / output_filename.replace(".root", ".err")),
+        template = SINGLE_FCL_TEMPLATE_SPACK,
+        larsoft_opts = executor.larsoft_opts,
+        inputs = inputs,
+        outputs = [File(str(output_filepath))],
+        parsl_resource_specification = parsl_resource_specification
+    )
+
+    # this modifies the list passed in by WorkflowExecutor
+    executor.futures.append(future.outputs[0])
+
+    return future.outputs
+
+
+def runfunc_caf(self, fcl, input_files, run_dir, executor):
+    """Method bound to each Stage object and run during workflow execution."""
+
+    fcl_fullpath = executor.fcl_dir / fcl
+    caf_input_arg = ' '.join([f'{fname.filename}' for fname in input_files])
+    inputs = [str(fcl_fullpath), caf_input_arg]
+
+    run_dir.mkdir(parents=True, exist_ok=True)
+    output_dir = executor.output_dir / self.stage_type.value
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    output_filename = os.path.splitext(os.path.basename(input_files[0].filename))[0] + '.flat.caf.root'
+    executor.lar_run_counter += 1
+
+    output_filepath = output_dir / output_filename
+    mg_cmd = ''
+    # mg_cmd = executor.meta.run_cmd(
+    #     output_filename + '.json', os.path.basename(fcl), check_exists=False)
+
+    future = fcl_future(
+        workdir = str(run_dir),
+        stdout = str(run_dir / output_filename.replace(".root", ".out")),
+        stderr = str(run_dir / output_filename.replace(".root", ".err")),
+        template = CAF_TEMPLATE_SPACK,
+        larsoft_opts = executor.larsoft_opts,
+        inputs = inputs,
+        outputs = [File(output_filepath)],
+        pre_job_hook = mg_cmd,
+        parsl_resource_specification = {'cores': 1, 'memory': 1000, 'disk': 1000}
+    )
+
     # this modifies the list passed in by WorkflowExecutor
     executor.futures.append(future.outputs[0])
 
@@ -109,19 +139,22 @@ class Reco2FromGenExecutor(WorkflowExecutor):
     def setup_single_workflow(self, iteration: int):
         workflow = Workflow(self.stage_order, default_fcls=self.fcls)
         runfunc_ = functools.partial(runfunc, executor=self)
+        runfunc_caf_ = functools.partial(runfunc_caf, executor=self)
         s = Stage(StageType.CAF)
         s.run_dir = get_subrun_dir(self.output_dir, iteration)
-        s.runfunc = runfunc_
+        s.runfunc = runfunc_caf_
 
         for i in range(self.subruns_per_caf):
             inst = iteration * self.subruns_per_caf + i
             # create reco2 file from MC, only need to specify the last stage
             # since there are no inputs
             s2 = Stage(StageType.RECO2)
+            s2.runfunc = runfunc_
 
             # each reco2 file will have its own directory
             s2.run_dir = get_subrun_dir(self.output_dir, inst)
             s.add_parents(s2)
+
         workflow.add_final_stage(s)
         return workflow
 

@@ -28,7 +28,7 @@ def create_provider_by_hostname(user_opts):
             scheduler_options = '#PBS -l filesystems=home:grand:eagle\n#PBS -l place=scatter',
             select_options  = user_opts.get("select_options", "ngpus=0"),
             launcher        = MpiExecLauncher(bind_cmd="--cpu-bind"),
-            worker_init     = "module use /soft/modulefiles; module load conda; conda activate sbn",
+            worker_init     = "module use /soft/modulefiles; module load conda; conda activate sbnd",
         )
         return provider
     else:
@@ -48,6 +48,7 @@ def create_executor_by_hostname(user_opts, provider):
                     provider=provider,
                     worker_options="--gpus 4",
                     full_debug=True,
+                    port=0,
                 )
 
     elif 'polaris' in hostname and ngpus==0:
