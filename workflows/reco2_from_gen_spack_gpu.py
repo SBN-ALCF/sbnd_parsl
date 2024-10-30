@@ -92,7 +92,7 @@ def runfunc_caf(self, fcl, input_files, run_dir, executor):
 
     fcl_fullpath = executor.fcl_dir / fcl
     caf_input_arg = ' '.join([f'{fname.filename}' for fname in input_files])
-    inputs = [str(fcl_fullpath), caf_input_arg]
+    inputs = [str(fcl_fullpath), caf_input_arg] + input_files
 
     run_dir.mkdir(parents=True, exist_ok=True)
     output_dir = executor.output_dir / self.stage_type.value

@@ -37,10 +37,10 @@ def create_provider_by_hostname(user_opts):
 
 def create_executor_by_hostname(user_opts, provider):
     hostname = socket.gethostname()
-    if("ngpus" in user_opts.get("select_options", "ngpus=0")):
+    if "ngpus" in user_opts.get("select_options", "ngpus=0"):
         ngpus = int(user_opts["select_options"].split("ngpus=",1)[1])
 
-    if 'polaris' in hostname and ngpus>0:
+    if 'polaris' in hostname and ngpus > 0:
         from parsl import WorkQueueExecutor
         return WorkQueueExecutor(
                     label="htex",
@@ -108,12 +108,13 @@ def create_default_useropts(**kwargs):
 def create_parsl_config(user_opts):
     checkpoints = get_all_checkpoints(user_opts["run_dir"])
 
-    providor = create_provider_by_hostname(user_opts)
-    executor = create_executor_by_hostname(user_opts, providor)
+    provider = create_provider_by_hostname(user_opts)
+    executor = create_executor_by_hostname(user_opts, provider)
 
     config = Config(
+            checkpoint_mode='task_exit',
             executors=[executor],
-            checkpoint_files = checkpoints,
+            checkpoint_files=checkpoints,
             run_dir=user_opts["run_dir"],
             strategy=user_opts.get("strategy", "simple"),
             retries=user_opts.get("retries", 0),
