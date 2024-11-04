@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 #
 # Get system information including running lar jobs as JSON output
@@ -23,6 +23,13 @@ echo "},"
 
 # cpu info 10 s interval
 mpstat -P ALL -o JSON 10 1 | tr '\n' '\r' | sed 's/^.\(.*\)..$/\1/mg'
+
+# memory
+free -k | awk '{if($1=="Mem:"){printf(",\"mem\":{\"total\":%d,\"used\":%d,\"free\":%d}\n", $2, $3, $4)}}'
+
+# disk
+echo ",\"disk\":"
+jq '.sysstat.hosts[0].statistics[0].disk' <(iostat -o JSON)
 
 # gpu info
 echo ",\"gpu\": {"
