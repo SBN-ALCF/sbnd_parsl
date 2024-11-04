@@ -21,6 +21,7 @@ echo "END $(date +%s) $(hostname)"
 
 
 # execute a single fcl file in a container
+# note: escape dollar signs for SL 7 container. Don't escape for running on the node
 SINGLE_FCL_TEMPLATE = f'''
 {JOB_PRE}
 cd {{workdir}}
@@ -51,19 +52,19 @@ singularity run -B /lus/eagle/ -B /grand/ {{container}} <<EOF
     # Add an optional input file:
     export lar_cmd="-c $LOCAL_FCL --output {{output}} {{lar_args}}"
     if [ -f {{input}} ]; then
-        export lar_cmd="$lar_cmd --source {{input}} "
+        export lar_cmd="\$lar_cmd --source {{input}} "
     else
-        export lar_cmd="$lar_cmd --nevts {{nevts}} "
+        export lar_cmd="\$lar_cmd --nevts {{nevts}} "
     fi
-    echo $lar_cmd
+    echo \$lar_cmd
     echo "About to run larsoft"
-    lar $lar_cmd
+    lar \$lar_cmd
     set +e
 
     # move histogram and json files to same directory as output
     # note: may not exist, fail silently
-    mv *.json $(dirname {{output}}) || true
-    mv  hist*root "$(dirname {{output}})/hists_$(basename {{output}})" || true
+    mv *.json \$(dirname {{output}}) || true
+    mv  hist*root "\$(dirname {{output}})/hists_$(basename {{output}})" || true
 EOF
 {{post_job_hook}}
 {JOB_POST}
@@ -152,26 +153,31 @@ singularity run -B /lus/eagle/ -B /grand/ {{container}} <<EOF
     set -e
     # Add an optional input file:
     export tempfile=inputlist.txt
-    echo "{{input}}" | sed 's/\ /\\n/g' > $tempfile
-    export lar_cmd="-c $LOCAL_FCL {{lar_args}} -S $tempfile"
-    echo $lar_cmd
+    echo "{{input}}" | sed 's/\ /\\n/g' > \$tempfile
+    export lar_cmd="-c $LOCAL_FCL {{lar_args}} -S \$tempfile"
+    echo \$lar_cmd
     echo "About to run larsoft"
-    lar $lar_cmd
+    lar \$lar_cmd
     set +e
 
     # Clean up temporary files, if they exist:
     # note: cleanup can cause art to crash, since art tries to clean up too...
     # rm -f RootOutput-*.root
     # rm -f TFileService-*.root
-    first_file=$(basename $(head -n 1 $tempfile) | sed 's/\.root//g')
-    outfile_caf=$first_file.caf.root
-    outfile_flat_caf=$first_file.flat.caf.root
+    first_file=\$(basename \$(head -n 1 \$tempfile) | sed 's/\.root//g')
+    outfile_caf=\$first_file.caf.root
+    outfile_flat_caf=\$first_file.flat.caf.root
 
 
-    mv *.json $(dirname {{output}}) || true
-    mv  *hist*root "$(dirname {{output}})/hists_$(basename {{output}})" || true
-    mv $outfile_caf $(dirname {{output}}) || true
-    mv $outfile_flat_caf $(dirname {{output}}) || true
+    echo "moving files"
+    echo "mv *.json \$(dirname {{output}}) || true"
+    mv *.json \$(dirname {{output}}) || true
+    echo "mv  *hist*root "\$(dirname {{output}})/hists_\$(basename {{output}})" || true"
+    mv  *hist*root "\$(dirname {{output}})/hists_\$(basename {{output}})" || true
+    echo "mv \$outfile_caf \$(dirname {{output}}) || true"
+    mv \$outfile_caf \$(dirname {{output}}) || true
+    echo "mv \$outfile_flat_caf \$(dirname {{output}}) || true"
+    mv \$outfile_flat_caf \$(dirname {{output}}) || true
 EOF
 {{post_job_hook}}
 {JOB_POST}
