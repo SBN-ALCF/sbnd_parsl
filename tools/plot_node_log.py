@@ -34,6 +34,16 @@ THEME = {
 [matplotlib.rc(key, **val) for key, val in THEME.items()]
 
 
+FCL_LIST = {
+    'prodoverlay_corsika_cosmics_proton_genie_rockbox_sbnd.fcl': 'GEN',
+    'g4_dirt_filter_lite.fcl': 'G4',
+    'standard_detsim_sbnd.fcl': 'DETSIM',
+    'standard_reco1_sbnd.fcl': 'RECO1',
+    'standard_reco2_sbnd.fcl': 'RECO2',
+    'cafmakerjob_sbnd_systtools_and_fluxwgt.fcl': 'CAF',
+}
+
+
 CM = 1/2.54
 LOG_NAME = 'log.json'
 
@@ -47,6 +57,7 @@ def main():
     lar_data = {}
     cpu_data = {}
     gpu_data = {}
+    mem_data = {}
 
     for i, ts_record in enumerate(json_log.items()):
         ts, record = ts_record
@@ -55,6 +66,7 @@ def main():
         lar = record['lar']
         cpu_info_list = record['sysstat']['hosts'][0]['statistics'][0]['cpu-load']
         gpu_info = record['gpu']
+        mem_info = record['mem']
 
         times.append(timestamp)
 
@@ -79,9 +91,14 @@ def main():
                 gpu_data[gpu] = np.zeros(nrecords)
             gpu_data[gpu][i] = info['gpu']
 
+        for key, val in mem_info.items():
+            if key not in mem_data:
+                mem_data[key] = np.zeros(nrecords)
+            mem_data[key][i] = val
         
 
-    fig, ax = plt.subplots(3, 1, figsize=(8 * CM, 10 * CM))
+    nrows = 4
+    fig, ax = plt.subplots(nrows, 1, figsize=(16 * CM, 20 * CM))
     ax = ax.flatten()
 
     date_formatter = matplotlib.dates.DateFormatter('%b %d\n%H:%M')
@@ -92,32 +109,44 @@ def main():
         a.sharex(ax[0])
         a.grid()
         a.yaxis.set_minor_locator(AutoMinorLocator())
-        if i < 2:
+        if i < nrows - 1:
             a.tick_params(labelbottom=False)
     # fig.subplots_adjust(hspace=0)
     
     totals = np.zeros(nrecords)
 
-    for fcl, vals in lar_data.items():
-        ax[0].plot(times, vals, label=fcl)
-        totals += vals
-    ax[0].plot(times, totals, color='k', label='total')
+    # processes plot
+    ax[0].axhline(32, color='gray', linestyle='--')
+    for fcl, label in FCL_LIST.items():
+        try:
+            ax[0].plot(times, lar_data[fcl], label=label)
+            totals += lar_data[fcl]
+        except KeyError:
+            continue
+    ax[0].plot(times, totals, linestyle='-.', color='k', label='Total')
     ax[0].legend()
     ax[0].set_ylabel('Number of Processes')
+    ax[0].set_ylim(0, 36)
 
-    for i, cpu_vals in enumerate(cpu_data.items()):
+    for i, cpu_vals in enumerate(reversed(cpu_data.items())):
         cpu, vals = cpu_vals
         ax[1].plot(times, vals + i * 0.1, label=cpu)
-    ax[1].set_ylabel('Per-core CPU Usage')
+    ax[1].set_ylabel('Per-core CPU Usage (A.U.)')
 
     for gpu, vals in gpu_data.items():
         ax[2].plot(times, vals, label=gpu)
-    ax[2].set_ylim(0, 100)
+    ax[2].set_ylim(0, 110)
     ax[2].legend()
     ax[2].set_ylabel('GPU Usage (%)')
 
+    max_mem = mem_data['total'][0] / (1024**2)
+    ax[3].plot(times, mem_data['used'] / (1024**2))
+    ax[3].axhline(max_mem, color='gray', linestyle='--')
+    ax[3].set_ylabel('Memory Usage (Gb)')
+    ax[3].set_ylim(0, max_mem * 1.1)
+
     plt.tight_layout()
-    plt.show()
+    plt.savefig('cpu_run_demo.pdf')
 
             
 

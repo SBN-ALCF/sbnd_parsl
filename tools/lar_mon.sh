@@ -6,7 +6,7 @@
 # How to run: ssh into a node, then run to get the instantaneous statistics.
 # To create a log, use the jq command in a loop to add the previous log with
 # the current output, e.g.,
-# `rm -f log.json; touch /tmp/log; watch -n 30 -x bash -c "jq -s add <(./lar_mon.sh) /tmp/log > log.json"`
+# `rm -f ~/log.json; touch /tmp/log && watch -n 30 -x bash -c "cp ~/log.json /tmp/log; jq -s add <(./lar_mon.sh) /tmp/log > ~/log.json"`
 
 echo "{"
 
