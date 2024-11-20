@@ -1,14 +1,22 @@
 {
     "run": {
-        "output": "/lus/eagle/projects/neutrinoGPU/gputnam/MCP2024BTestSpine"
+        "output": "/lus/eagle/projects/neutrinoGPU/sbnd/mc/v09_93_01/cv_cpu/spine",
+        "nsubruns": 1,
+        "max_futures": 10000
     },
-    "container": "/lus/grand/projects/neutrinoGPU/software/spine/larcv2_ub20.04-cuda12.1-pytorch2.2.1-larndsim.sif",
-    "config": "/lus/grand/projects/neutrinoGPU/software/spine/configs/icarus_full_chain_240719.cfg",
+    "spine": {
+        "container": "/lus/grand/projects/neutrinoGPU/software/spine/larcv2_ub20.04-cuda12.1-pytorch2.2.1-larndsim.sif",
+        "config": "/lus/grand/projects/neutrinoGPU/software/spine/configs/icarus_full_chain_240719.cfg"
+    },
     "inputs": "/lus/grand/projects/neutrinoGPU/software/spine/inputs/icarus_test_list.txt",
+    "workflow":  {
+        "reco1_path": "/lus/eagle/projects/neutrinoGPU/sbnd/mc/v09_93_01/cv_cpu/031900/subrun_031909",
+        "files_per_subrun": 1
+    },
     "queue": {
         "queue": "debug",
         "walltime": "1:00:00",
+        "select_options": "ngpus=4",
         "nodes_per_block": 1
-    },
-    "metadata": {}
+    }
 }

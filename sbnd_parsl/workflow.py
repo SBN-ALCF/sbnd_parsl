@@ -63,6 +63,7 @@ class StageType(Enum):
     DECODE = 'decode'
     CAF = 'caf'
     SCRUB = 'scrub'
+    SPINE = 'spine'
     EMPTY = 'empty'
     SUPER = 'super'
 
@@ -158,7 +159,7 @@ class Stage:
             raise RuntimeError(f'Attempt to run stage {self._stage_type} while it still holds references to its parents')
 
 
-        if self.fcl is None:
+        if self.fcl is None and self._stage_type != StageType.SPINE:
             raise NoFclFileException(f'Attempt to run stage {self._stage_type} with no fcl provided and no default')
 
         if self._stage_type in [StageType.GEN]:
@@ -197,7 +198,9 @@ class Stage:
             if s.stage_order is None:
                 s.stage_order = self.stage_order
             if s.fcl is None:
-                s.fcl = fcls[s.stage_type]
+                # spine jobs have no fcl
+                if s.stage_type != StageType.SPINE:
+                    s.fcl = fcls[s.stage_type]
             self._parents_iterators.append((s, run_stage(s, fcls)))
 
     def get_next_task(self, mode='cycle'):
@@ -322,15 +325,24 @@ class Workflow:
 class WorkflowExecutor: 
     """Class to wrap settings and workflow objects, and manage task submission."""
     def __init__(self, settings: json):
-        self.larsoft_opts = settings['larsoft']
+        self.larsoft_opts = None
+        try:
+            self.larsoft_opts = settings['larsoft']
+        except KeyError:
+            pass
 
         self.run_opts = settings['run']
         self.output_dir = Path(self.run_opts['output'])
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.max_futures = self.run_opts['max_futures']
 
-        self.fcl_dir = Path(self.run_opts['fclpath'])
-        self.fcls = settings['fcls']
+        self.fcl_dir = None
+        self.fcls = {}
+        try:
+            self.fcl_dir = Path(self.run_opts['fclpath'])
+            self.fcls = settings['fcls']
+        except KeyError:
+            pass
 
         self.futures = []
 
