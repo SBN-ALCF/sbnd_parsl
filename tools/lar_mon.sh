@@ -6,7 +6,7 @@
 # How to run: ssh into a node, then run to get the instantaneous statistics.
 # To create a log, use the jq command in a loop to add the previous log with
 # the current output, e.g.,
-# `rm -f ~/log.json; touch /tmp/log && watch -n 30 -x bash -c "cp ~/log.json /tmp/log; jq -s add <(./lar_mon.sh) /tmp/log > ~/log.json"`
+# `rm -f ~/log.json; touch /tmp/log && watch -n 30 -x bash -c "cp ~/log.json /tmp/log; jq -s add <(./lar_mon.sh) /tmp/log > /tmp/log2 && mv /tmp/log2 ~/log.json"`
 
 echo "{"
 
@@ -33,19 +33,11 @@ jq '.sysstat.hosts[0].statistics[0].disk' <(iostat -o JSON)
 
 # gpu info
 echo ",\"gpu\": {"
-nvidia-smi -q -d UTILIZATION | egrep -A 3 "^GPU" | sed 's/--//g' | sed -r '/^\s*$/d' \
-    | awk '{
-            if((NR-1)%4==0){
-                printf("\"%s\":{", $2)
-            }
-            else if((NR-1)%4==2){
-                printf("\"gpu\": %.1f,"), $3
-            }
-            else if((NR-1)%4==3){
-                printf("\"memory\": %.1f}\n"), $3
-            }
-        }' \
-    | paste -sd","
+nvidia-smi --query-gpu=pci.bus_id,name,utilization.gpu,memory.used,memory.total --format=csv,noheader \
+    | sed 's/, /,/g' | awk -F"," \
+    '{
+        printf("\"%s\":{\"name\": \"%s\", \"gpu\": %.1f, \"mem\":%d, \"total_mem\": %d}\n", $1, $2, $3, $4, $5)
+    }' | paste -sd,
 echo "}"
 
 echo "}}"

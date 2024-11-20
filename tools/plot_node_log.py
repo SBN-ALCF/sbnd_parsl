@@ -108,6 +108,7 @@ def main():
     for i, a in enumerate(ax):
         a.sharex(ax[0])
         a.grid()
+        a.margins(0)
         a.yaxis.set_minor_locator(AutoMinorLocator())
         if i < nrows - 1:
             a.tick_params(labelbottom=False)
@@ -132,6 +133,7 @@ def main():
         cpu, vals = cpu_vals
         ax[1].plot(times, vals + i * 0.1, label=cpu)
     ax[1].set_ylabel('Per-core CPU Usage (A.U.)')
+    ax[1].set_ylim(0, len(cpu_data) * 0.1 + 1.5)
 
     for gpu, vals in gpu_data.items():
         ax[2].plot(times, vals, label=gpu)
@@ -142,7 +144,7 @@ def main():
     max_mem = mem_data['total'][0] / (1024**2)
     ax[3].plot(times, mem_data['used'] / (1024**2))
     ax[3].axhline(max_mem, color='gray', linestyle='--')
-    ax[3].set_ylabel('Memory Usage (Gb)')
+    ax[3].set_ylabel('Memory Usage (GB)')
     ax[3].set_ylim(0, max_mem * 1.1)
 
     plt.tight_layout()
