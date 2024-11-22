@@ -12,28 +12,52 @@ from parsl.executors import HighThroughputExecutor, ThreadPoolExecutor, WorkQueu
 from parsl.launchers import MpiExecLauncher, GnuParallelLauncher
 # from parsl.monitoring.monitoring import MonitoringHub
 
-
-def create_provider_by_hostname(user_opts):
-    hostname = socket.gethostname()
-    if 'polaris' in hostname:
-        # TODO: The worker init should be somewhere outside Corey's homedir
-        provider = PBSProProvider(
-            account         = user_opts["allocation"],
-            queue           = user_opts.get("queue", "debug"),
-            nodes_per_block = user_opts.get("nodes_per_block", 1),
-            cpus_per_node   = user_opts.get("cpus_per_node", 32),
-            init_blocks     = 1,
-            max_blocks      = 1,
-            walltime        = user_opts.get("walltime", "1:00:00"),
-            scheduler_options = '#PBS -l filesystems=home:grand:eagle\n#PBS -l place=scatter',
-            select_options  = user_opts.get("select_options", "ngpus=0"),
-            launcher        = MpiExecLauncher(bind_cmd="--cpu-bind"),
-            worker_init     = "module use /soft/modulefiles; module load conda; conda activate sbnd",
-        )
-        return provider
+def create_provider_by_hostname(user_opts, spack_opts):
+    if len(spack_opts) < 2:
+        hostname = socket.gethostname()
+        if 'polaris' in hostname:
+            print("HERE")
+            # TODO: The worker init should be somewhere outside Corey's homedir
+            provider = PBSProProvider(
+                account         = user_opts["allocation"],
+                queue           = user_opts.get("queue", "debug"),
+                nodes_per_block = user_opts.get("nodes_per_block", 1),
+                cpus_per_node   = user_opts.get("cpus_per_node", 32),
+                init_blocks     = 1,
+                max_blocks      = 1,
+                walltime        = user_opts.get("walltime", "1:00:00"),
+                # cmd_timeout     = 480,
+                scheduler_options = '#PBS -l filesystems=home:grand:eagle\n#PBS -l place=scatter',
+                select_options  = user_opts.get("select_options", "ngpus=0"),
+                launcher        = MpiExecLauncher(bind_cmd="--cpu-bind"),
+                worker_init     = "module use /soft/modulefiles; module load conda; conda activate sbnd",
+            )
+            return provider
+        else:
+            return LocalProvider()
     else:
-        return LocalProvider()
-
+        hostname = socket.gethostname()
+        spack_top = spack_opts[0]
+        version = spack_opts[1]
+        if 'polaris' in hostname:
+            # TODO: The worker init should be somewhere outside Corey's homedir
+            provider = PBSProProvider(
+                account         = user_opts["allocation"],
+                queue           = user_opts.get("queue", "debug"),
+                nodes_per_block = user_opts.get("nodes_per_block", 1),
+                cpus_per_node   = user_opts.get("cpus_per_node", 32),
+                init_blocks     = 1,
+                max_blocks      = 1,
+                walltime        = user_opts.get("walltime", "1:00:00"),
+                cmd_timeout     = 240,
+                scheduler_options = '#PBS -l filesystems=home:grand:eagle\n#PBS -l place=scatter',
+                select_options  = user_opts.get("select_options", "ngpus=0"),
+                launcher        = MpiExecLauncher(bind_cmd="--cpu-bind", overrides="--depth=64 --ppn 1"),
+                worker_init     = "source "+spack_top+"/share/spack/setup-env.sh && spack env activate sbndcode-"+version+"_env && spack load sbndcode && module use /soft/modulefiles && module load conda && conda activate sbn && export CUDA_MPS_PIPE_DIRECTORY=/tmp/nvidia-mps && export CUDA_MPS_LOG_DIRECTORY=/tmp/nvidia-log && CUDA_VISIBLE_DEVICES=0,1,2,3 nvidia-cuda-mps-control -d && echo \"start_server -uid $( id -u )\" | nvidia-cuda-mps-control",
+            )
+            return provider
+        else:
+            return LocalProvider()
 
 def create_executor_by_hostname(user_opts, provider):
     hostname = socket.gethostname()
@@ -46,7 +70,7 @@ def create_executor_by_hostname(user_opts, provider):
                     label="htex",
                     address=address_by_interface("bond0"),
                     provider=provider,
-                    worker_options="--gpus 4",
+                    worker_options="--gpus 32 --cores 32",
                     full_debug=True,
                     port=0,
                 )
@@ -105,19 +129,18 @@ def create_default_useropts(**kwargs):
     return user_opts
 
 
-def create_parsl_config(user_opts):
+def create_parsl_config(user_opts, spack_opts=[]):
     checkpoints = get_all_checkpoints(user_opts["run_dir"])
 
-    provider = create_provider_by_hostname(user_opts)
+    provider = create_provider_by_hostname(user_opts, spack_opts)
     executor = create_executor_by_hostname(user_opts, provider)
-
     config = Config(
             checkpoint_mode='task_exit',
             executors=[executor],
             checkpoint_files=checkpoints,
             run_dir=user_opts["run_dir"],
             strategy=user_opts.get("strategy", "simple"),
-            retries=user_opts.get("retries", 0),
+            retries=user_opts.get("retries", 5),
             app_cache=True,
     )
     '''

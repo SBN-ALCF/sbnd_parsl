@@ -85,8 +85,6 @@ export LOCAL_FCL=$(basename {{fhicl}})
 {{pre_job_hook}}
 echo "Load spack env"
 source {{spack_top}}/share/spack/setup-env.sh
-spack env activate sbndcode-{{version}}_env
-spack load sbndcode
 
 export GENIE_XSEC_GENLIST=Default
 export GENIE_XSEC_EMAX=1000.0
@@ -99,6 +97,11 @@ echo "Running in: "
 pwd
 echo "Sourcing products area"
 #setup SBNDCODE:
+nvidia-smi
+BESTCUDA=$(python3 -c 'import gpustat;import numpy as np;stats=gpustat.GPUStatCollection.new_query();memory=[gpu.memory_used for gpu in stats.gpus];print(np.argmin(memory))')
+export CUDA_VISIBLE_DEVICES=$BESTCUDA
+echo GPU Seleced
+echo $CUDA_VISIBLE_DEVICES
 export EXPERIMENT={{experiment}}
 echo "Products setup!"
 # get the fcls
@@ -188,6 +191,7 @@ CAF_TEMPLATE_SPACK = f'''
 {JOB_PRE}
 cd {{workdir}}
 echo "Current directory: "
+echo "Current directory CAF!!!!: "
 pwd
 echo "Current files: "
 ls
@@ -196,10 +200,6 @@ cp {{fhicl}} {{workdir}}/
 export LOCAL_FCL=$(basename {{fhicl}})
 
 {{pre_job_hook}}
-echo "Load spack env"
-source {{spack_top}}/share/spack/setup-env.sh
-spack env activate sbndcode-{{version}}_env
-spack load sbndcode
 
 export GENIE_XSEC_GENLIST=Default
 export GENIE_XSEC_EMAX=1000.0

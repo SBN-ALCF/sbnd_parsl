@@ -66,9 +66,9 @@ def runfunc(self, fcl, input_files, run_dir, executor):
         #     f'echo "source.firstSubRun: {subrun_number}" >> {os.path.basename(fcl)}'
         # ])
 
-    parsl_resource_specification = {'cores': 1, 'memory': 1000, 'disk': 1000}
+    task_parsl_resource_specification = {'cores': 1, 'memory': 100, 'disk': 500, 'priority':10}
     if self.stage_type == StageType.DETSIM:
-        parsl_resource_specification = {'cores': 1, 'memory': 1000, 'disk': 1000, 'gpus': 1}
+        task_parsl_resource_specification = {'cores': 1, 'memory': 100, 'disk': 500, 'gpus': 1, 'priority':100}
 
     future = fcl_future(
         workdir = str(run_dir),
@@ -78,12 +78,11 @@ def runfunc(self, fcl, input_files, run_dir, executor):
         larsoft_opts = executor.larsoft_opts,
         inputs = inputs,
         outputs = [File(str(output_filepath))],
-        parsl_resource_specification = parsl_resource_specification
+        parsl_resource_specification = task_parsl_resource_specification
     )
 
     # this modifies the list passed in by WorkflowExecutor
     executor.futures.append(future.outputs[0])
-
     return future.outputs
 
 
@@ -115,7 +114,7 @@ def runfunc_caf(self, fcl, input_files, run_dir, executor):
         inputs = inputs,
         outputs = [File(output_filepath)],
         pre_job_hook = mg_cmd,
-        parsl_resource_specification = {'cores': 1, 'memory': 1000, 'disk': 1000}
+        parsl_resource_specification = {'cores': 1, 'memory': 100, 'disk': 500, 'priority': 10}
     )
 
     # this modifies the list passed in by WorkflowExecutor
@@ -144,6 +143,7 @@ class Reco2FromGenExecutor(WorkflowExecutor):
         s.run_dir = get_subrun_dir(self.output_dir, iteration)
         s.runfunc = runfunc_caf_
 
+        workflow.add_final_stage(s)
         for i in range(self.subruns_per_caf):
             inst = iteration * self.subruns_per_caf + i
             # create reco2 file from MC, only need to specify the last stage
@@ -153,9 +153,8 @@ class Reco2FromGenExecutor(WorkflowExecutor):
 
             # each reco2 file will have its own directory
             s2.run_dir = get_subrun_dir(self.output_dir, inst)
-            s.add_parents(s2)
+            s.add_parents(s2, workflow.default_fcls)
 
-        workflow.add_final_stage(s)
         return workflow
 
 
@@ -169,7 +168,7 @@ def main(settings):
     user_opts = create_default_useropts()
     user_opts['run_dir'] = str(pathlib.Path(settings['run']['output']) / 'runinfo')
     user_opts.update(settings['queue'])
-    parsl_config = create_parsl_config(user_opts)
+    parsl_config = create_parsl_config(user_opts, [settings['larsoft']['spack_top'],settings['larsoft']['version']])
     print(parsl_config)
     parsl.clear()
     parsl.load(parsl_config)
