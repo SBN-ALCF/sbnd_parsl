@@ -127,10 +127,12 @@ class Stage:
     # def ancestors(self, ancestors: Dict) -> None:
     #     self._ancestors = ancestors
 
-    @property
-    def parents(self) -> List:
+    def has_parents(self) -> bool:
         # return self._parents
         return len(self._parents_iterators) > 0
+
+    def parents(self, _type: StageType):
+        return set(s[0] for s in self._parents_iterators if s[0].stage_type == _type)
 
     @property
     def complete(self) -> bool:
@@ -155,7 +157,7 @@ class Stage:
             return
 
         # make sure we delete references to the parents once they are run
-        if self.parents:
+        if self.has_parents():
             raise RuntimeError(f'Attempt to run stage {self._stage_type} while it still holds references to its parents')
 
 
@@ -185,12 +187,8 @@ class Stage:
             stages = [stages]
 
         for s in stages:
-            # TODO error if we try to add a parent of the wrong type; this
-            # requires knowing stage order but user code lets the workflow fill
-            # it in, so may be None
-            # if s.stage_type != self.parent_type:
-            #     raise StageAncestorException(f"Tried to add stage of type {s.stage_type} as a parent to a stage with type {stage.stage_type}")
-            # self._parents.append(s)
+            if s.stage_type != self.parent_type:
+                raise StageAncestorException(f"Tried to add stage of type {s.stage_type} as a parent to a stage with type {self.stage_type}")
             if s.run_dir is None:
                 s.run_dir = self.run_dir
             if s.runfunc is None:
@@ -240,21 +238,21 @@ def run_stage(stage: Stage, fcls: Optional[Dict]=None):
         yield
 
     # if we have our inputs already, can run
-    if stage.input_files is not None and not stage.parents:
+    if stage.input_files is not None and not stage.has_parents():
         stage.run()
-        return
+        yield
 
     # this raises StopIteration
     if stage.complete:
         return
 
-    if not stage.parents:
+    if not stage.has_parents():
         # no inputs and no parents, create a parent stage
         parent_stage = Stage(stage.parent_type)
         stage.add_parents(parent_stage, fcls)
 
     # run parent stages
-    while stage.parents:
+    while stage.has_parents():
         try:
             next(stage.get_next_task())
             yield
@@ -303,7 +301,7 @@ class Workflow:
         self._stage = Stage(StageType.SUPER)
         self._stage.run_dir = self._run_dir
         self._stage.runfunc = self._default_runfunc
-        self._stage.stage_order = self._stage_order
+        self._stage.stage_order = self._stage_order + [StageType.SUPER]
 
     def add_final_stage(self, stage: Stage):
         """Add the final stage to the workflow as a generator expression."""
@@ -405,14 +403,17 @@ class WorkflowExecutor:
 
 
     def get_task_results(self):
-        for f in self.futures:
+        """Loop over all tasks & clear finished ones."""
+        def check_future_status(f):
             if not f.done():
-                continue
+                return True
             try:
                 print(f'[SUCCESS] task {f.tid} {f.filepath} {f.result()}')
             except Exception as e:
                 print(f'[FAILED] task {f.tid} {f.filepath}')
-            self.futures.remove(f)
+            return False
+
+        self.futures = list(filter(check_future_status, self.futures))
 
 
     def setup_single_workflow(self, iteration: int):
