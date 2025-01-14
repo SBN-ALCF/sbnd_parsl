@@ -3,6 +3,7 @@
 # This workflow runs the decoder on raw data files
 
 import sys, os
+import re
 import json
 import time
 import pathlib
@@ -17,9 +18,12 @@ from parsl.app.app import bash_app
 from sbnd_parsl.workflow import StageType, Stage, Workflow, WorkflowExecutor
 from sbnd_parsl.metadata import MetadataGenerator
 from sbnd_parsl.templates import SINGLE_FCL_TEMPLATE, CAF_TEMPLATE, \
-    SINGLE_FCL_TEMPLATE_SPACK
+    SINGLE_FCL_TEMPLATE_SPACK, CAF_TEMPLATE_SPACK
 from sbnd_parsl.utils import create_default_useropts, create_parsl_config, \
     hash_name
+
+
+SBND_RAWDATA_REGEXP = re.compile(r".*data_.*run(\d+)_.*\.root")
 
 @bash_app(cache=True)
 def fcl_future(workdir, stdout, stderr, template, larsoft_opts, inputs=[], outputs=[], pre_job_hook='', post_job_hook=''):
@@ -35,7 +39,7 @@ def fcl_future(workdir, stdout, stderr, template, larsoft_opts, inputs=[], outpu
     )
 
 
-def runfunc(self, fcl, input_files, run_dir, executor):
+def runfunc(self, fcl, input_files, run_dir, executor, nevts=-1, nskip=0):
     """Method bound to each Stage object and run during workflow execution."""
 
     fcl_fullpath = executor.fcl_dir / fcl
@@ -44,32 +48,48 @@ def runfunc(self, fcl, input_files, run_dir, executor):
         inputs = [str(fcl_fullpath)] + input_files
 
     run_dir.mkdir(parents=True, exist_ok=True)
-    output_dir = executor.output_dir / self.stage_type.value
+
+    # decode stage takes a string filename
+    first_file_name = input_files[0]
+    if self.stage_type != StageType.DECODE:
+        # but other stages take a datafuture input
+        first_file_name = input_files[0].filename
+
+    run_number_str = SBND_RAWDATA_REGEXP.match(first_file_name).groups()[0]
+    output_dir = executor.output_dir / self.stage_type.value / run_number_str
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    output_filename = '-'.join([
-        str(self.stage_type.value), os.path.basename(input_files[0])
-    ])
+    if self.stage_type != StageType.CAF:
+        # from string or posixpath input
+        output_filename = '-'.join([
+            str(self.stage_type.value), os.path.basename(first_file_name)
+        ])
+    else:
+        output_filename = os.path.splitext(os.path.basename(first_file_name))[0] + '.flat.caf.root'
 
     output_filepath = output_dir / output_filename
+
+    # decode and reco1 stages have two output streams due to art filters
+    if self.stage_type == StageType.DECODE or self.stage_type == StageType.RECO1:
+        output_cmd = f'--output out1:{str(output_filepath)} --output out2:skipped.root'
+    else:
+        output_cmd = f'--output {str(output_filepath)}'
+    opts = executor.larsoft_opts.copy()
+    opts.update({'output_cmd': output_cmd, 'nevts': nevts, 'nskip': nskip})
+
     mg_cmd = executor.meta.run_cmd(
         output_filename + '.json', os.path.basename(fcl), check_exists=False)
 
-    if self.stage_type == StageType.GEN:
-        executor.unique_run_number += 1
-        run_number = 1 + (executor.unique_run_number // 100)
-        subrun_number = executor.unique_run_number % 100
-        mg_cmd = '\n'.join([mg_cmd,
-            f'echo "source.firstRun: {run_number}" >> {os.path.basename(fcl)}',
-            f'echo "source.firstSubRun: {subrun_number}" >> {os.path.basename(fcl)}'
-        ])
+    template = SINGLE_FCL_TEMPLATE_SPACK
+    if self.stage_type == StageType.CAF:
+        template = CAF_TEMPLATE_SPACK
 
     future = fcl_future(
         workdir = str(run_dir),
         stdout = str(run_dir / output_filename.replace(".root", ".out")),
         stderr = str(run_dir / output_filename.replace(".root", ".err")),
-        template = SINGLE_FCL_TEMPLATE,
-        larsoft_opts = executor.larsoft_opts,
+        template = template,
+        larsoft_opts = opts,
         inputs = inputs,
         outputs = [File(str(output_filepath))],
         pre_job_hook = mg_cmd
@@ -89,14 +109,18 @@ class DecoderExecutor(WorkflowExecutor):
         self.meta = MetadataGenerator(settings['metadata'], self.fcls, defer_check=True)
         self.stage_order = [StageType.from_str(key) for key in self.fcls.keys()]
         self.files_per_subrun = settings['workflow']['files_per_subrun']
+        self.run_list = None
+        with open(settings['workflow']['run_list'], 'r') as f:
+            self.run_list = [int(l.strip()) for l in f.readlines()]
 
         self.rawdata_path = pathlib.Path(settings['workflow']['rawdata_path'])
 
 
     def execute(self):
         """Override to create workflows from N files instead of iteration number."""
+        rawdata_generators = [self.rawdata_path.rglob(f'{run:06d}/data*Muon*.root') for run in self.run_list]
+        rawdata_files = itertools.chain(*rawdata_generators)
 
-        rawdata_files = self.rawdata_path.rglob('data*.root')
         nsubruns = self.run_opts['nsubruns']
 
         idx_cycle = itertools.cycle(range(nsubruns))
@@ -108,14 +132,12 @@ class DecoderExecutor(WorkflowExecutor):
             if idx in skip_idx:
                 continue
 
-            wf = wfs[idx]
-            if wf is None:
+            if wfs[idx] is None:
                 rawdata_slice = list(itertools.islice(rawdata_files, self.files_per_subrun))
                 if not rawdata_slice:
                     skip_idx.add(idx)
                     continue
-                wf = self.setup_single_workflow(idx, rawdata_slice)
-                wfs[idx] = wf
+                wfs[idx] = self.setup_single_workflow(idx, rawdata_slice)
 
             # rate-limit the number of concurrent futures to avoid using too
             # much memory on login nodes
@@ -125,11 +147,15 @@ class DecoderExecutor(WorkflowExecutor):
                 time.sleep(10)
 
             try:
-                next(wf.get_next_task())
+                while True:
+                    next(wfs[idx].get_next_task())
+                    # if not self.futures[-1].done():
+                    #     break
             except StopIteration:
                 skip_idx.add(idx)
 
                 # let garbage collection happen
+                # del wfs[idx]
                 wfs[idx] = None
         
         while len(self.futures) > 0:
@@ -137,18 +163,31 @@ class DecoderExecutor(WorkflowExecutor):
             time.sleep(10)
 
     def setup_single_workflow(self, iteration: int, rawdata_files: List[pathlib.Path]):
-        workflow = Workflow(self.stage_order, default_fcls=self.fcls)
-        runfunc_ = functools.partial(runfunc, executor=self)
-        s = Stage(StageType.DECODE)
-        s.run_dir = get_subrun_dir(self.output_dir, iteration)
-        s.runfunc = runfunc_
         if not rawdata_files:
             raise RuntimeError()
 
-        for file in rawdata_files:
-            s.add_input_file(str(file))
-
+        workflow = Workflow(self.stage_order, default_fcls=self.fcls)
+        runfunc_ = functools.partial(runfunc, executor=self)
+        s = Stage(StageType.CAF)
+        s.run_dir = get_subrun_dir(self.output_dir, iteration)
+        s.runfunc = runfunc_
         workflow.add_final_stage(s)
+
+        for i, file in enumerate(rawdata_files):
+            s2 = Stage(StageType.RECO2)
+            s2.run_dir = get_subrun_dir(self.output_dir, iteration * self.files_per_subrun + i)
+
+            # break reco1 into multiple jobs to avoid timing out while
+            # processing large files
+            s3 = Stage(StageType.RECO1)
+
+            s4 = Stage(StageType.DECODE)
+            s4.add_input_file(str(file))
+
+            s.add_parents(s2, workflow.default_fcls)
+            s2.add_parents(s3, workflow.default_fcls)
+            s3.add_parents(s4, workflow.default_fcls)
+
         return workflow
 
 
@@ -163,6 +202,7 @@ def main(settings):
     user_opts['run_dir'] = str(pathlib.Path(settings['run']['output']) / 'runinfo')
     user_opts.update(settings['queue'])
     parsl_config = create_parsl_config(user_opts)
+    parsl_config = create_parsl_config(user_opts, [settings['larsoft']['spack_top'],settings['larsoft']['version']])
     print(parsl_config)
     parsl.clear()
     parsl.load(parsl_config)
