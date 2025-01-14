@@ -16,7 +16,6 @@ def create_provider_by_hostname(user_opts, spack_opts):
     if len(spack_opts) < 2:
         hostname = socket.gethostname()
         if 'polaris' in hostname:
-            print("HERE")
             # TODO: The worker init should be somewhere outside Corey's homedir
             provider = PBSProProvider(
                 account         = user_opts["allocation"],
@@ -30,7 +29,7 @@ def create_provider_by_hostname(user_opts, spack_opts):
                 scheduler_options = '#PBS -l filesystems=home:grand:eagle\n#PBS -l place=scatter',
                 select_options  = user_opts.get("select_options", "ngpus=0"),
                 launcher        = MpiExecLauncher(bind_cmd="--cpu-bind"),
-                worker_init     = "module use /soft/modulefiles; module load conda; conda activate sbnd",
+                worker_init     = "module use /soft/modulefiles; module load conda; conda activate sbn",
             )
             return provider
         else:
@@ -46,8 +45,8 @@ def create_provider_by_hostname(user_opts, spack_opts):
                 queue           = user_opts.get("queue", "debug"),
                 nodes_per_block = user_opts.get("nodes_per_block", 1),
                 cpus_per_node   = user_opts.get("cpus_per_node", 32),
-                init_blocks     = 1,
-                max_blocks      = 1,
+                init_blocks     = user_opts.get("init_blocks", 1),
+                max_blocks      = user_opts.get("max_blocks", 1),
                 walltime        = user_opts.get("walltime", "1:00:00"),
                 cmd_timeout     = 240,
                 scheduler_options = '#PBS -l filesystems=home:grand:eagle\n#PBS -l place=scatter',
@@ -89,7 +88,8 @@ def create_executor_by_hostname(user_opts, provider):
                     cpu_affinity="alternating",
                     prefetch_capacity=0,
                     provider=provider,
-                    block_error_handler=False
+                    block_error_handler=False,
+                    working_dir=str(pathlib.Path(user_opts["run_dir"]) / 'cmd')
                 )
 
     else:
