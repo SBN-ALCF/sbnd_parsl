@@ -24,6 +24,7 @@ For developing, include the optional `-e` flag before the `.` in the above line.
 
 ```python
 #!/usr/bin/env python3
+import pathlib
 
 from sbnd_parsl.workflow import StageType, Stage, Workflow, WorkflowExecutor
 
@@ -38,17 +39,17 @@ class SimpleWorkflowExecutor(WorkflowExecutor):
         workflow = Workflow(stage_order, self.fcls)
         s = Stage(StageType.DETSIM)
         s.run_dir = str(pathlib.Path(self.run_opts['output']) / str(iteration))
-
-        s0 = Stage(StageType.G4)
-        s.add_parents(s0)
+        workflow.add_final_stage(s)
 
         s2 = Stage(StageType.DETSIM)
         s2.run_dir = str(pathlib.Path(self.run_opts['output']) / str(iteration) / 'a')
+        workflow.add_final_stage(s2)
 
         # workflow will automatically fill in g4 and gen stages, with
         # run_dir inherited from detsim stage
-        workflow.add_final_stage(s)
-        workflow.add_final_stage(s2)
+        s0 = Stage(StageType.G4)
+        s.add_parents(s0, workflow.default_fcls)
+
         return workflow
 
 
