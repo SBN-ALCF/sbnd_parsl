@@ -115,7 +115,7 @@ def create_default_useropts(**kwargs):
             'walltime': '1:00:00',
             'nodes_per_block' : 1,
             'cpus_per_node' : 32,
-            'strategy' : 'None',
+            'strategy' : 'none',
         }
     else:
         # We're likely running locally
@@ -139,7 +139,7 @@ def create_parsl_config(user_opts, spack_opts=[]):
             executors=[executor],
             checkpoint_files=checkpoints,
             run_dir=user_opts["run_dir"],
-            strategy=user_opts.get("strategy", "None"),
+            strategy=user_opts.get("strategy", "none"),
             retries=user_opts.get("retries", 0),
             app_cache=True,
     )

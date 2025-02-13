@@ -19,6 +19,17 @@ hostname
 echo "END $(date +%s) $(hostname)" 
 '''
 
+# pick the CUDA device with the lowest memory utilization by assigning it to
+# CUDA_VISIBLE_DEVICES environment variable
+# note: ties broken randomly
+NVIDIA_BEST_CUDA = r'''
+nvidia-smi
+BESTCUDA=$(python3 -c 'import gpustat;import numpy as np;stats=gpustat.GPUStatCollection.new_query();memory=np.array([gpu.memory_used for gpu in stats.gpus]);print(np.random.choice(np.flatnonzero(memory == memory.min())))')
+export CUDA_VISIBLE_DEVICES=$BESTCUDA
+echo GPU Seleced
+echo $CUDA_VISIBLE_DEVICES
+'''
+
 
 # execute a single fcl file in a container
 # note: escape dollar signs for SL 7 container. Don't escape for running on the node
@@ -50,7 +61,7 @@ singularity run -B /lus/eagle/ -B /grand/ {{container}} <<EOF
     # get the fcls
     set -e
     # Add an optional input file:
-    export lar_cmd="-c $LOCAL_FCL --output {{output}} {{lar_args}}"
+    export lar_cmd="-c $LOCAL_FCL {{output_cmd}} {{lar_args}}"
     if [ -f {{input}} ]; then
         export lar_cmd="\$lar_cmd --source {{input}} "
     else
@@ -83,8 +94,9 @@ cp {{fhicl}} {{workdir}}/
 export LOCAL_FCL=$(basename {{fhicl}})
 
 {{pre_job_hook}}
-echo "Load spack env"
-source {{spack_top}}/share/spack/setup-env.sh
+# this is now done in worker_init
+# echo "Load spack env"
+# source {{spack_top}}/share/spack/setup-env.sh
 
 export GENIE_XSEC_GENLIST=Default
 export GENIE_XSEC_EMAX=1000.0
@@ -97,19 +109,15 @@ echo "Running in: "
 pwd
 echo "Sourcing products area"
 #setup SBNDCODE:
-nvidia-smi
-BESTCUDA=$(python3 -c 'import gpustat;import numpy as np;stats=gpustat.GPUStatCollection.new_query();memory=[gpu.memory_used for gpu in stats.gpus];print(np.argmin(memory))')
-export CUDA_VISIBLE_DEVICES=$BESTCUDA
-echo GPU Seleced
-echo $CUDA_VISIBLE_DEVICES
+{NVIDIA_BEST_CUDA}
 export EXPERIMENT={{experiment}}
 echo "Products setup!"
 # get the fcls
 set -e
 # Add an optional input file:
-export lar_cmd="-c $LOCAL_FCL --output {{output}} {{lar_args}}"
+export lar_cmd="-c $LOCAL_FCL {{output_cmd}} {{lar_args}}"
 if [ -f {{input}} ]; then
-    export lar_cmd="$lar_cmd --source {{input}} "
+    export lar_cmd="$lar_cmd --source {{input}} --nevts {{nevts}} --nskip {{nskip}}"
 else
     export lar_cmd="$lar_cmd --nevts {{nevts}} "
 fi
@@ -118,9 +126,11 @@ echo "About to run larsoft"
 lar $lar_cmd
 set +e
 
-# Clean up temporary files, if they exist:
-rm -f RootOutput-*.root
-rm -f TFileService-*.root
+echo "moving files"
+echo "mv *.json $(dirname {{output}}) || true"
+mv *.json $(dirname {{output}}) || true
+echo "mv  *hist*root "$(dirname {{output}})/hists_$(basename {{output}})" || true"
+mv  *hist*root "$(dirname {{output}})/hists_$(basename {{output}})" || true
 {{post_job_hook}}
 {JOB_POST}
 '''
@@ -225,9 +235,6 @@ echo "About to run larsoft"
 lar $lar_cmd
 set +e
 
-# Clean up temporary files, if they exist:
-rm -f RootOutput-*.root
-rm -f TFileService-*.root
 
 first_file=$(basename $(head -n 1 $tempfile) | sed 's/\.root//g')
 outfile_caf=$first_file.caf.root
@@ -258,11 +265,52 @@ set -e
 singularity run -B /lus/eagle/ -B /lus/grand/ --nv {{container}} <<EOF
     echo "Running in: "
     pwd
-    # python spine/bin/run.py -c configs/icarus_full_chain_240719.cfg
-    python /lus/grand/projects/neutrinoGPU/software/spine/spine/bin/run.py -c {{config}} -S {{input}}
+    export FMATCH_BASEDIR={{opt0finder}}
+    source \$FMATCH_BASEDIR/configure.sh
+    echo \$FMATCH_BASEDIR
+    echo \$FMATCH_LIBDIR
+    python {{exe}} -c {{config}} -s {{input}}
 EOF
 {{post_job_hook}}
 {JOB_POST}
 '''
 
 
+# execute a custom command
+CMD_TEMPLATE_SPACK = f'''
+{JOB_PRE}
+cd {{workdir}}
+echo "Current directory: "
+pwd
+echo "Current files: "
+ls
+echo "Move fcl."
+cp {{fhicl}} {{workdir}}/
+export LOCAL_FCL=$(basename {{fhicl}})
+
+{{pre_job_hook}}
+set -e
+echo "Running in: "
+pwd
+echo "Sourcing products area"
+#setup SBNDCODE:
+{NVIDIA_BEST_CUDA}
+export EXPERIMENT={{experiment}}
+echo "Products setup!"
+# get the fcls
+set -e
+# Add an optional input file:
+export lar_cmd="{{cmd}}"
+echo $lar_cmd
+echo "About to run larsoft"
+eval $lar_cmd
+set +e
+
+echo "moving files"
+echo "mv *.json $(dirname {{output}}) || true"
+mv *.json $(dirname {{output}}) || true
+echo "mv  *hist*root "$(dirname {{output}})/hists_$(basename {{output}})" || true"
+mv  *hist*root "$(dirname {{output}})/hists_$(basename {{output}})" || true
+{{post_job_hook}}
+{JOB_POST}
+'''
