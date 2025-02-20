@@ -260,8 +260,8 @@ def run_stage(stage: Stage, fcls: Optional[Dict]=None):
     if stage.complete:
         return
 
-    if stage.fcl is None and stage.stage_type != StageType.SUPER:
-        if fcls is None:
+    if stage.fcl is None and stage.stage_type != StageType.SUPER and stage.stage_type != StageType.SPINE:
+        if not fcls:
             raise NoFclFileException(f"Tried to run a stage with no fcl file. Either set the stage's fcl file first, or pass in a dictionary to run_stage.")
 
         stage.fcl = fcls[stage.stage_type]

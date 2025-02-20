@@ -140,7 +140,7 @@ def create_parsl_config(user_opts, spack_opts=[]):
             checkpoint_files=checkpoints,
             run_dir=user_opts["run_dir"],
             strategy=user_opts.get("strategy", "none"),
-            retries=user_opts.get("retries", 0),
+            retries=user_opts.get("retries", 5),
             app_cache=True,
     )
     '''

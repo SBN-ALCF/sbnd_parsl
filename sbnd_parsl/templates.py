@@ -98,12 +98,6 @@ export LOCAL_FCL=$(basename {{fhicl}})
 # echo "Load spack env"
 # source {{spack_top}}/share/spack/setup-env.sh
 
-export GENIE_XSEC_GENLIST=Default
-export GENIE_XSEC_EMAX=1000.0
-export GENIE_XSEC_DIR=/grand/neutrinoGPU/software/larsoft/genie_xsec/v3_04_00/NULL/AR2320i00000-k250-e1000
-export GENIE_XSEC_KNOTS=250
-export GENIE_XSEC_TUNE=AR23_20i_00_000
-
 set -e
 echo "Running in: "
 pwd
@@ -211,12 +205,6 @@ export LOCAL_FCL=$(basename {{fhicl}})
 
 {{pre_job_hook}}
 
-export GENIE_XSEC_GENLIST=Default
-export GENIE_XSEC_EMAX=1000.0
-export GENIE_XSEC_DIR=/grand/neutrinoGPU/software/larsoft/genie_xsec/v3_04_00/NULL/AR2320i00000-k250-e1000
-export GENIE_XSEC_KNOTS=250
-export GENIE_XSEC_TUNE=AR23_20i_00_000
-
 set -e
 echo "Running in: "
 pwd
@@ -262,15 +250,29 @@ echo "Load singularity"
 module use /soft/spack/gcc/0.6.1/install/modulefiles/Core
 module load apptainer
 set -e
-singularity run -B /lus/eagle/ -B /lus/grand/ --nv {{container}} <<EOF
+
+# these lines replace hard-coded path in SPINE cfg files from github
+# put the changes in a temporary copy
+TMP_CFG=$(mktemp)
+cp {{config}} $TMP_CFG
+sed -i "s|\(.*weight_path:\).*|\\1 {{weights}}|g" $TMP_CFG
+sed -i "s|\(.*cfg:\).*\(flashmatch.*\.cfg\).*|\\1 $(dirname {{config}})/\\2|g" $TMP_CFG
+echo "Config: $TMP_CFG"
+
+singularity run -B /lus/eagle/ -B /lus/grand/ --nv {{container}} <<EOL
     echo "Running in: "
     pwd
-    export FMATCH_BASEDIR={{opt0finder}}
-    source \$FMATCH_BASEDIR/configure.sh
-    echo \$FMATCH_BASEDIR
-    echo \$FMATCH_LIBDIR
-    python {{exe}} -c {{config}} -s {{input}}
-EOF
+    if [ "{{opt0finder}}x" != "x" ]; then
+        source {{opt0finder}}/configure.sh
+        echo "using custom OpT0Finder"
+        echo \$FMATCH_BASEDIR
+        echo \$FMATCH_LIBDIR
+    fi
+    python {{exe}} -c $TMP_CFG -S {{input}}
+
+    echo "moving files"
+    mv *.h5 $(dirname {{output}}) || true
+EOL
 {{post_job_hook}}
 {JOB_POST}
 '''
