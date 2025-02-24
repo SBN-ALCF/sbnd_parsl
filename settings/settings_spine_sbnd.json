@@ -1,11 +1,11 @@
 {
     "run": {
         "output": "/lus/eagle/projects/neutrinoGPU/sbnd/spine_test",
-        "nsubruns": 5,
+        "nsubruns": 32,
         "max_futures": 20000
     },
     "workflow": {
-        "files_per_subrun": 2,
+        "files_per_subrun": 32,
         "larcv_path": "/lus/eagle/projects/neutrinoGPU/sbnd/mc/larcv_test_files"
     },
     "spine": {
@@ -17,7 +17,7 @@
     },
     "queue": {
         "queue": "debug",
-        "walltime": "00:05:00",
+        "walltime": "01:00:00",
         "select_options": "ngpus=0",
         "nodes_per_block": 1,
         "init_blocks": 1,

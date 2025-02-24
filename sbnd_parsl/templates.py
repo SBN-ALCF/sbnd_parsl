@@ -26,7 +26,7 @@ NVIDIA_BEST_CUDA = r'''
 nvidia-smi
 BESTCUDA=$(python3 -c 'import gpustat;import numpy as np;stats=gpustat.GPUStatCollection.new_query();memory=np.array([gpu.memory_used for gpu in stats.gpus]);print(np.random.choice(np.flatnonzero(memory == memory.min())))')
 export CUDA_VISIBLE_DEVICES=$BESTCUDA
-echo GPU Seleced
+echo GPU Selected
 echo $CUDA_VISIBLE_DEVICES
 '''
 
@@ -257,11 +257,18 @@ TMP_CFG=$(mktemp)
 cp {{config}} $TMP_CFG
 sed -i "s|\(.*weight_path:\).*|\\1 {{weights}}|g" $TMP_CFG
 sed -i "s|\(.*cfg:\).*\(flashmatch.*\.cfg\).*|\\1 $(dirname {{config}})/\\2|g" $TMP_CFG
+
+# use GPUs from environment, so remove this 
+sed -i "s|\(.*gpus:\).*||g" $TMP_CFG
 echo "Config: $TMP_CFG"
+
+{NVIDIA_BEST_CUDA}
 
 singularity run -B /lus/eagle/ -B /lus/grand/ --nv {{container}} <<EOL
     echo "Running in: "
     pwd
+    export CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES
+    echo "CUDA_VISIBLE_DEVICES=\$CUDA_VISIBLE_DEVICES"
     if [ "{{opt0finder}}x" != "x" ]; then
         source {{opt0finder}}/configure.sh
         echo "using custom OpT0Finder"
