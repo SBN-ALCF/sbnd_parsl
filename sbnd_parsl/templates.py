@@ -255,6 +255,7 @@ set -e
 # put the changes in a temporary copy
 TMP_CFG=$(mktemp)
 cp {{config}} $TMP_CFG
+sed -i "s|\(.*num_workers:\).*|\\1 {{cores_per_worker}}|g" $TMP_CFG
 sed -i "s|\(.*weight_path:\).*|\\1 {{weights}}|g" $TMP_CFG
 sed -i "s|\(.*cfg:\).*\(flashmatch.*\.cfg\).*|\\1 $(dirname {{config}})/\\2|g" $TMP_CFG
 

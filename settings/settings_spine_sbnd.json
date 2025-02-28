@@ -6,6 +6,7 @@
     },
     "workflow": {
         "files_per_subrun": 32,
+	"cores_per_worker": 8,
         "larcv_path": "/lus/eagle/projects/neutrinoGPU/sbnd/mc/larcv_test_files"
     },
     "spine": {

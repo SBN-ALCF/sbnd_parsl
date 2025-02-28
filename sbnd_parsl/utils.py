@@ -93,6 +93,7 @@ def create_executor_by_hostname(user_opts, provider):
             worker_debug=True,
             max_workers_per_node=user_opts["cpus_per_node"],
             cores_per_worker=1,
+            cores_per_worker=user_opts["cores_per_worker"],
             available_accelerators=ngpus,
             address=address_by_interface("bond0"),
             address_probe_timeout=120,
