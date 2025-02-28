@@ -12,85 +12,96 @@ from parsl.executors import HighThroughputExecutor, ThreadPoolExecutor, WorkQueu
 from parsl.launchers import MpiExecLauncher, GnuParallelLauncher
 # from parsl.monitoring.monitoring import MonitoringHub
 
+
+def _worker_init(spack_top=None, spack_version='', mps: bool=True, venv_name='sbn'):
+    """Return list of worker init commands based on the options."""
+    cmds = []
+    if spack_top is not None:
+        cmds += [
+            f'source {pathlib.Path(spack_top, "/share/spack/setup-env.sh")}',
+            f'spack env activate sbndcode {spack_version}',
+            'spack load sbndcode'
+        ]
+    if venv_name:
+        cmds += [
+            'module use /soft/modulefiles',
+            'module load conda',
+            f'conda activate {venv_name}'
+        ]
+    if mps:
+        cmds += [
+            'export CUDA_MPS_PIPE_DIRECTORY=/tmp/nvidia-mps',
+            'export CUDA_MPS_LOG_DIRECTORY=/tmp/nvidia-log',
+            'CUDA_VISIBLE_DEVICES=0,1,2,3 nvidia-cuda-mps-control -d',
+            'echo \"start_server -uid $( id -u )\" | nvidia-cuda-mps-control'
+        ]
+
+    return '&&'.join(cmds)
+
+
 def create_provider_by_hostname(user_opts, spack_opts):
-    if len(spack_opts) < 2:
-        hostname = socket.gethostname()
-        if 'polaris' in hostname:
-            # TODO: The worker init should be somewhere outside Corey's homedir
-            provider = PBSProProvider(
-                account         = user_opts["allocation"],
-                queue           = user_opts.get("queue", "debug"),
-                nodes_per_block = user_opts.get("nodes_per_block", 1),
-                cpus_per_node   = user_opts.get("cpus_per_node", 32),
-                init_blocks     = 1,
-                max_blocks      = 1,
-                walltime        = user_opts.get("walltime", "1:00:00"),
-                # cmd_timeout     = 480,
-                scheduler_options = '#PBS -l filesystems=home:grand:eagle\n#PBS -l place=scatter',
-                select_options  = user_opts.get("select_options", "ngpus=0"),
-                launcher        = MpiExecLauncher(bind_cmd="--cpu-bind"),
-                worker_init     = "module use /soft/modulefiles; module load conda; conda activate sbn",
-            )
-            return provider
-        else:
-            return LocalProvider()
-    else:
-        hostname = socket.gethostname()
+    hostname = socket.gethostname()
+
+    if len(spack_opts) == 2:
         spack_top = spack_opts[0]
         version = spack_opts[1]
-        if 'polaris' in hostname:
-            # TODO: The worker init should be somewhere outside Corey's homedir
-            provider = PBSProProvider(
-                account         = user_opts["allocation"],
-                queue           = user_opts.get("queue", "debug"),
-                nodes_per_block = user_opts.get("nodes_per_block", 1),
-                cpus_per_node   = user_opts.get("cpus_per_node", 32),
-                init_blocks     = user_opts.get("init_blocks", 1),
-                max_blocks      = user_opts.get("max_blocks", 1),
-                walltime        = user_opts.get("walltime", "1:00:00"),
-                cmd_timeout     = 240,
-                scheduler_options = '#PBS -l filesystems=home:grand:eagle\n#PBS -l place=scatter',
-                select_options  = user_opts.get("select_options", "ngpus=0"),
-                launcher        = MpiExecLauncher(bind_cmd="--cpu-bind", overrides="--depth=64 --ppn 1"),
-                worker_init     = "source "+spack_top+"/share/spack/setup-env.sh && spack env activate sbndcode-"+version+"_env && spack load sbndcode && module use /soft/modulefiles && module load conda && conda activate sbn && export CUDA_MPS_PIPE_DIRECTORY=/tmp/nvidia-mps && export CUDA_MPS_LOG_DIRECTORY=/tmp/nvidia-log && CUDA_VISIBLE_DEVICES=0,1,2,3 nvidia-cuda-mps-control -d && echo \"start_server -uid $( id -u )\" | nvidia-cuda-mps-control",
-            )
-            return provider
-        else:
-            return LocalProvider()
+        worker_init = _worker_init(spack_top=spack_top, spack_version=version, mps=True, venv_name='sbn')
+    else:
+        worker_init = _worker_init(mps=True, venv_name='sbn')
+
+    if 'polaris' in hostname:
+        provider = PBSProProvider(
+            account         = user_opts["allocation"],
+            queue           = user_opts.get("queue", "debug"),
+            nodes_per_block = user_opts.get("nodes_per_block", 1),
+            cpus_per_node   = user_opts.get("cpus_per_node", 32),
+            init_blocks     = user_opts.get("init_blocks", 1),
+            max_blocks      = user_opts.get("max_blocks", 1),
+            walltime        = user_opts.get("walltime", "1:00:00"),
+            cmd_timeout     = 240,
+            scheduler_options = '#PBS -l filesystems=home:grand:eagle\n#PBS -l place=scatter',
+            # select_options  = user_opts.get("select_options", "ngpus=0"),
+            launcher        = MpiExecLauncher(bind_cmd="--cpu-bind", overrides="--depth=64 --ppn 1"),
+            worker_init     = worker_init
+        )
+        return provider
+    else:
+        return LocalProvider()
 
 def create_executor_by_hostname(user_opts, provider):
     hostname = socket.gethostname()
     if "ngpus" in user_opts.get("select_options", "ngpus=0"):
         ngpus = int(user_opts["select_options"].split("ngpus=",1)[1])
 
-    if 'polaris' in hostname and ngpus > 0:
-        from parsl import WorkQueueExecutor
-        return WorkQueueExecutor(
-                    label="htex",
-                    address=address_by_interface("bond0"),
-                    provider=provider,
-                    worker_options="--gpus 32 --cores 32",
-                    full_debug=True,
-                    port=0,
-                )
+    # if 'polaris' in hostname and ngpus > 0:
+    #     from parsl import WorkQueueExecutor
+    #     return WorkQueueExecutor(
+    #                 label="htex",
+    #                 address=address_by_interface("bond0"),
+    #                 provider=provider,
+    #                 worker_options="--gpus 32 --cores 32",
+    #                 full_debug=True,
+    #                 port=0,
+    #             )
 
-    elif 'polaris' in hostname and ngpus == 0:
+    if 'polaris' in hostname:
         from parsl import HighThroughputExecutor
         return HighThroughputExecutor(
-                    label="htex",
-                    heartbeat_period=15,
-                    heartbeat_threshold=120,
-                    worker_debug=True,
-                    max_workers_per_node=user_opts["cpus_per_node"],
-                    cores_per_worker=1,
-                    address=address_by_interface("bond0"),
-                    address_probe_timeout=120,
-                    cpu_affinity="alternating",
-                    prefetch_capacity=0,
-                    provider=provider,
-                    block_error_handler=False,
-                    working_dir=str(pathlib.Path(user_opts["run_dir"]) / 'cmd')
-                )
+            label="htex",
+            heartbeat_period=15,
+            heartbeat_threshold=120,
+            worker_debug=True,
+            max_workers_per_node=user_opts["cpus_per_node"],
+            cores_per_worker=1,
+            available_accelerators=ngpus,
+            address=address_by_interface("bond0"),
+            address_probe_timeout=120,
+            cpu_affinity="alternating",
+            prefetch_capacity=0,
+            provider=provider,
+            block_error_handler=False,
+            working_dir=str(pathlib.Path(user_opts["run_dir"]) / 'cmd')
+        )
 
     else:
         # default: 
