@@ -149,7 +149,7 @@ def main(settings):
     # parsl
     user_opts = create_default_useropts()
     user_opts['run_dir'] = str(pathlib.Path(settings['run']['output']) / 'runinfo')
-    user_opts['cores_per_worker'] = settings['run']['cores_per_worker']
+    user_opts['cores_per_worker'] = settings['workflow']['cores_per_worker']
     user_opts.update(settings['queue'])
     parsl_config = create_parsl_config(user_opts)
     print(parsl_config)
