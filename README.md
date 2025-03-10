@@ -4,13 +4,16 @@ Classes and functions for running SBND workflows on Polaris at ALCF.
 
 ## Installation
 
-To install alongside an existing conda environment, use
+To install an editable version in a conda environment, use
+```
+conda develop .
+```
+
+If using a Python virtual environment with `pip`, use
 
 ```
-pip install --no-build-isolation --no-deps .
+pip install -e .
 ```
-
-For developing, include the optional `-e` flag before the `.` in the above line.
 
 ## Usage
 
