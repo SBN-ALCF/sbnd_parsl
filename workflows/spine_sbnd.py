@@ -76,6 +76,7 @@ class SpineExecutor(WorkflowExecutor):
         self.larcv_path = pathlib.Path(settings['workflow']['larcv_path'])
         self.spine_opts = settings['spine']
 
+        self.spine_opts.update({'cores_per_worker': settings['workflow']['cores_per_worker']})
 
     def execute(self):
         """Override to create workflows from N files instead of iteration number."""
@@ -148,6 +149,7 @@ def main(settings):
     # parsl
     user_opts = create_default_useropts()
     user_opts['run_dir'] = str(pathlib.Path(settings['run']['output']) / 'runinfo')
+    user_opts['cores_per_worker'] = settings['workflow']['cores_per_worker']
     user_opts.update(settings['queue'])
     parsl_config = create_parsl_config(user_opts)
     print(parsl_config)
