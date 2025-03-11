@@ -7,10 +7,14 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-LOG_NAME = '/home/bearc/log.json'
+import argparse
 
 def main():
-    with open(LOG_NAME, 'r') as f:
+    parser = argparse.ArgumentParser(description='Plot SPINE node log')
+    parser.add_argument('--log', type=str, required=True, help='Path to the log file')
+    args = parser.parse_args()
+
+    with open(args.log, 'r') as f:
         json_log = json.loads(f.read())
 
     nrecords = len(json_log)
