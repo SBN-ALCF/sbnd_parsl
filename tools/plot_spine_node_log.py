@@ -12,6 +12,7 @@ import argparse
 def main():
     parser = argparse.ArgumentParser(description='Plot SPINE node log')
     parser.add_argument('--log', type=str, required=True, help='Path to the log file')
+    parser.add_argument('--output', type=str, required=True, help='Path to the output plot')
     args = parser.parse_args()
 
     with open(args.log, 'r') as f:
@@ -137,8 +138,8 @@ def main():
     fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
 
     # Save
-    fig.write_html('cpu_run_demo.html')
-    fig.write_image('cpu_run_demo.png')
+    fig.write_html(f'{args.output}.html')
+    fig.write_image(f'{args.output}.png')
 
 if __name__ == '__main__':
     main()
