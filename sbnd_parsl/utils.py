@@ -18,8 +18,8 @@ def _worker_init(spack_top=None, spack_version='', mps: bool=True, venv_name='sb
     cmds = []
     if spack_top is not None:
         cmds += [
-            f'source {pathlib.Path(spack_top, "/share/spack/setup-env.sh")}',
-            f'spack env activate sbndcode {spack_version}',
+            f'source {pathlib.Path(spack_top, "share/spack/setup-env.sh")}',
+            f'spack env activate sbndcode-{spack_version}_env',
             'spack load sbndcode'
         ]
     if venv_name:
