@@ -11,8 +11,8 @@ import argparse
 
 def main():
     parser = argparse.ArgumentParser(description='Plot SPINE node log')
-    parser.add_argument('--log', type=str, required=True, help='Path to the log file')
-    parser.add_argument('--output', type=str, required=True, help='Path to the output plot')
+    parser.add_argument('-l', '--log', type=str, required=True, help='Path to the log file')
+    parser.add_argument('-o', '--output', default='~/cpu_run_demo', type=str, help='Path to the output plot')
     args = parser.parse_args()
 
     with open(args.log, 'r') as f:
