@@ -2,7 +2,6 @@
 
 import json
 from datetime import datetime
-
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
@@ -75,8 +74,10 @@ def main():
 
         for gpu, info in gpu_info.items():
             if gpu not in gpu_data:
-                gpu_data[gpu] = np.zeros(nrecords)
-            gpu_data[gpu][i] = info['gpu']
+                gpu_data[gpu]= {'mem':np.zeros(nrecords), 'gpu':np.zeros(nrecords)}
+            gpu_data[gpu]['gpu'][i]= info['gpu']
+            gpu_data[gpu]['mem'][i]= info['mem']/1024
+            max_gpu_mem = 4*info['total_mem']/1024
 
         for key, val in mem_info.items():
             if key not in mem_data:
@@ -84,7 +85,7 @@ def main():
             mem_data[key][i] = val
         
 
-    nrows = 4
+    nrows = 5
     fig, ax = plt.subplots(nrows, 1, figsize=(16 * CM, 20 * CM))
     ax = ax.flatten()
 
@@ -123,7 +124,7 @@ def main():
     ax[1].set_ylim(0, len(cpu_data) * 0.1 + 1.5)
 
     for gpu, vals in gpu_data.items():
-        ax[2].plot(times, vals, label=gpu)
+        ax[2].plot(times, vals['gpu'], label=gpu)
     ax[2].set_ylim(0, 110)
     ax[2].legend()
     ax[2].set_ylabel('GPU Usage (%)')
@@ -133,6 +134,13 @@ def main():
     ax[3].axhline(max_mem, color='gray', linestyle='--')
     ax[3].set_ylabel('Memory Usage (GB)')
     ax[3].set_ylim(0, max_mem * 1.1)
+
+    for gpu, vals in gpu_data.items():
+        ax[4].plot(times,  vals['mem'], label=gpu)
+    ax[4].axhline(max_gpu_mem, color='gray', linestyle='--')
+    ax[4].set_ylim(0, 1.1*max_gpu_mem)
+    ax[4].legend()
+    ax[4].set_ylabel('GPU Memory Usage (GB)')
 
     plt.tight_layout()
     plt.savefig('cpu_run_demo.png')
