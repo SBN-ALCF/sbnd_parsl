@@ -10,7 +10,7 @@ from parsl.utils import get_all_checkpoints
 from parsl.providers import PBSProProvider, LocalProvider
 from parsl.executors import HighThroughputExecutor, ThreadPoolExecutor, WorkQueueExecutor
 from parsl.launchers import MpiExecLauncher, GnuParallelLauncher
-# from parsl.monitoring.monitoring import MonitoringHub
+from parsl.monitoring.monitoring import MonitoringHub
 
 
 def _worker_init(spack_top=None, spack_version='', mps: bool=True, venv_name='sbn'):
@@ -153,16 +153,12 @@ def create_parsl_config(user_opts, spack_opts=[]):
             strategy=user_opts.get("strategy", "none"),
             retries=user_opts.get("retries", 5),
             app_cache=True,
+            monitoring=MonitoringHub(
+                hub_address=address_by_interface('bond0'),
+                monitoring_debug=False,
+                resource_monitoring_interval=10,
+            ),
     )
-    '''
-    # TODO: Not working yet
-    monitoring=MonitoringHub(
-        hub_address=address_by_interface('bond0'),
-        hub_port=55055,
-        monitoring_debug=False,
-        resource_monitoring_interval=10,
-    ),
-    '''
 
     return config
 
@@ -171,3 +167,19 @@ def hash_name(string: str) -> str:
     """Create something that looks like abcd-abcd-abcd-abcd from a string."""
     strhash = hashlib.shake_128(bytes(string, encoding='utf8')).hexdigest(16)
     return '-'.join(strhash[i*4:i*4+4] for i in range(4))
+
+
+def subrun_dir(prefix: pathlib.Path, subrun: int, step: int=2, depth: int=2, width: int=6):
+    """Returns a path with directory structure like XXXX00/XXXXXX.
+    Number of 0s set by depth. Left padding set by width."""
+    width = max(width, len(str(subrun)))
+    result = prefix
+    if depth < 1:
+        raise RuntimeError("Must set depth >= 1")
+
+    for i in reversed(range(0, depth)):
+        q = 10**(step * i)
+        path_element = q * (subrun // q)
+        result /= f'{path_element:0{width}d}'
+
+    return result

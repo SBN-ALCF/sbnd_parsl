@@ -2,7 +2,6 @@
 
 import json
 from datetime import datetime
-
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -53,8 +52,10 @@ def main():
 
         for gpu, info in gpu_info.items():
             if gpu not in gpu_data:
-                gpu_data[gpu] = np.zeros(nrecords)
-            gpu_data[gpu][i] = info['gpu']
+                gpu_data[gpu]= {'mem':np.zeros(nrecords), 'gpu':np.zeros(nrecords)}
+            gpu_data[gpu]['gpu'][i]= info['gpu']
+            gpu_data[gpu]['mem'][i]= info['mem']/1024
+            max_gpu_mem = 4*info['total_mem']/1024
 
         for key, val in mem_info.items():
             if key not in mem_data:
