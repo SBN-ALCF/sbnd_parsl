@@ -30,6 +30,19 @@ echo GPU Selected
 echo $CUDA_VISIBLE_DEVICES
 '''
 
+# define a function so the job can find the full path to fcl by name
+FIND_FCL = r'''
+function find_fcl() {{
+    if [ "$1" != "${{1#/}}" ]; then
+        # absolute path
+        echo $1 
+        return 0
+    fi
+
+    # relative path or filename -- look up in FHICL_FILE_PATH
+    echo $(IFS=:; find $FHICL_FILE_PATH -name $(basename "${{1}}") | head -n 1)
+}}
+'''
 
 # execute a single fcl file in a container
 # note: escape dollar signs for SL 7 container. Don't escape for running on the node
@@ -90,7 +103,17 @@ pwd
 echo "Current files: "
 ls
 echo "Move fcl."
-cp {{fhicl}} {{workdir}}/
+
+{FIND_FCL}
+fhicl_from_env=$(find_fcl {{fhicl}})
+echo "fhicl_from_env=$fhicl_from_env"
+if [ ! -z $fhicl_from_env ]; then
+    echo "got fhicl from environment variable: $fhicl_from_env"
+    cp $fhicl_from_env {{workdir}}/
+else
+    echo "did not find fhicl from environment variable. Trying local."
+    cp {{fhicl}} {{workdir}}/
+fi
 export LOCAL_FCL=$(basename {{fhicl}})
 
 {{pre_job_hook}}
@@ -103,7 +126,8 @@ echo "Running in: "
 pwd
 echo "Sourcing products area"
 #setup SBNDCODE:
-{NVIDIA_BEST_CUDA}
+# {NVIDIA_BEST_CUDA}
+echo "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
 export EXPERIMENT={{experiment}}
 echo "Products setup!"
 # get the fcls
@@ -253,7 +277,7 @@ set -e
 
 # these lines replace hard-coded path in SPINE cfg files from github
 # put the changes in a temporary copy
-TMP_CFG=$(mktemp)
+TMP_CFG={{workdir}}/tmp.cfg
 cp {{config}} $TMP_CFG
 sed -i "s|\(.*num_workers:\).*|\\1 {{cores_per_worker}}|g" $TMP_CFG
 sed -i "s|\(.*weight_path:\).*|\\1 {{weights}}|g" $TMP_CFG
@@ -295,8 +319,15 @@ pwd
 echo "Current files: "
 ls
 echo "Move fcl."
-cp {{fhicl}} {{workdir}}/
+
+{FIND_FCL}
+fhicl_from_env=$(find_fcl {{fhicl}})
+cp $fhicl_from_env {{workdir}}/
 export LOCAL_FCL=$(basename {{fhicl}})
+
+echo "FHICL_FILE_PATH=$FHICL_FILE_PATH"
+echo "fhicl_from_env=$fhicl_from_env"
+echo "LOCAL_FCL=$LOCAL_FCL"
 
 {{pre_job_hook}}
 set -e
@@ -304,7 +335,7 @@ echo "Running in: "
 pwd
 echo "Sourcing products area"
 #setup SBNDCODE:
-{NVIDIA_BEST_CUDA}
+echo "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
 export EXPERIMENT={{experiment}}
 echo "Products setup!"
 # get the fcls

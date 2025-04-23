@@ -113,7 +113,7 @@ class Stage:
         self._input_files = None
         self._output_files = None
         self._parents_iterators = deque()
-        self._combine_with_parent = False
+        self._combine = False
 
     @property
     def stage_type(self) -> StageType:
@@ -163,12 +163,12 @@ class Stage:
             self._input_files.append(file)
 
     @property
-    def combine_with_parent(self) -> bool:
-        return self._combine_with_parent
+    def combine(self) -> bool:
+        return self._combine
 
-    @combine_with_parent.setter
-    def combine_with_parent(self, val: bool) -> None:
-        self._combine_with_parent = val
+    @combine.setter
+    def combine(self, val: bool) -> None:
+        self._combine = val
 
     def run(self, rerun: bool=False) -> None:
         """Produces the output file for this stage."""
@@ -264,7 +264,10 @@ def run_stage(stage: Stage, fcls: Optional[Dict]=None):
         if not fcls:
             raise NoFclFileException(f"Tried to run a stage with no fcl file. Either set the stage's fcl file first, or pass in a dictionary to run_stage.")
 
-        stage.fcl = fcls[stage.stage_type]
+        try:
+            stage.fcl = fcls[stage.stage_type]
+        except KeyError:
+            stage.fcl = fcls[stage.stage_type.value]
 
     if stage.runfunc is None:
         logger.warning(f'No runfunc specified for stage with type {stage.stage_type}. Adding default runfunc')
@@ -294,7 +297,7 @@ def run_stage(stage: Stage, fcls: Optional[Dict]=None):
     while stage.has_parents():
         try:
             next(stage.get_next_task())
-            if not stage.combine_with_parent:
+            if not stage.combine:
                 yield
         except StopIteration:
             pass
