@@ -21,6 +21,29 @@ from sbnd_parsl.templates import SPINE_TEMPLATE
 from sbnd_parsl.utils import create_default_useropts, create_parsl_config
 
 
+SPINE_METADATA_TEMPLATE = {
+    "file_name": "h5_file",
+    "user": "sbndpro",
+    "application": {
+        "family": "art",
+        "name": "gen_g4_detsim_reco1",
+        "version": "spine_version"
+    },
+    "parents": [
+        {
+            "file_name": "larcv_file"
+        }
+    ],
+    "data_tier": "spine",
+    "file_format": "spine",
+    "file_type": "mc",
+    "group": "sbnd",
+    "production.name": "settings_override",
+    "production.type": "settings_override",
+    "sbnd_project.name": "settings_override"
+}
+
+
 @bash_app(cache=True)
 def fcl_future(workdir, stdout, stderr, template, spine_opts, inputs=[], outputs=[], pre_job_hook='', post_job_hook=''):
     """Return formatted bash script which produces each future when executed."""
@@ -39,18 +62,38 @@ def runfunc(self, fcl, input_files, run_dir, iteration, executor):
 
     run_dir.mkdir(parents=True, exist_ok=True)
     output_dir = executor.output_dir / self.stage_type.value
-    output_dir.mkdir(parents=True, exist_ok=True)
 
     # DataFuture for this task will be the final h5 file of all inputs
+    def spine_output_name(filename: pathlib.PurePosixPath) -> pathlib.PurePosixPath:
+        return pathlib.PurePosixPath(f"{filename.with_suffix('')}_spine.h5")
+    subdir_name = f'{iteration // 100:06d}'
+    output_dir = output_dir / subdir_name
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+
     last_file = None
     input_file = run_dir / 'filelist.txt'
     with open(input_file, 'w') as f:
-        for file in input_files:
-            f.write(f'{file}\n')
-            last_file = file
+        for file_str in input_files:
+            f.write(f'{file_str}\n')
+            larcv_file = pathlib.PurePosixPath(file_str)
+
+            # metadata file to be generated along with each h5 file
+            metadata = SPINE_METADATA_TEMPLATE.copy()
+            metadata['application']['version'] = executor.spine_opts['version']
+            h5_file = spine_output_name(larcv_file)
+            metadata['file_name'] = h5_file.name
+            metadata['parents'][0]['file_name'] = larcv_file.name
+            metadata_file = h5_file.with_suffix('.h5.json').name
+            with open(output_dir / metadata_file, "w") as json_file:
+                json.dump(metadata, json_file, indent=4)
+
+            last_file = larcv_file
+
     input_str = str(input_file)
 
-    output_filepath = output_dir / pathlib.Path(f"{last_file.replace('.root', '')}_spine.h5").name
+    output_filepath = output_dir / spine_output_name(last_file).name
+    print(f'submitting {len(input_files)} files')
     future = fcl_future(
         workdir = str(run_dir),
         stdout = str(run_dir / 'spine.out'),
@@ -80,7 +123,7 @@ class SpineExecutor(WorkflowExecutor):
 
     def execute(self):
         """Override to create workflows from N files instead of iteration number."""
-        spine_input_generator = self.larcv_path.rglob('larcv*.root')
+        spine_input_generator = self.larcv_path.rglob('larcv_data*.root')
         nsubruns = self.run_opts['nsubruns']
 
         idx_cycle = itertools.cycle(range(nsubruns))
@@ -151,6 +194,9 @@ def main(settings):
     user_opts['run_dir'] = str(pathlib.Path(settings['run']['output']) / 'runinfo')
     user_opts['cores_per_worker'] = settings['workflow']['cores_per_worker']
     user_opts.update(settings['queue'])
+
+    # user-override metadata in our template
+    SPINE_METADATA_TEMPLATE.update(settings['metadata'])
     parsl_config = create_parsl_config(user_opts)
     print(parsl_config)
     parsl.clear()

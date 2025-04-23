@@ -1,20 +1,21 @@
 {
     "run": {
-        "output": "/lus/eagle/projects/neutrinoGPU/sbnd/spine_test",
-        "nsubruns": 32,
+        "output": "/lus/eagle/projects/neutrinoGPU/twester/spine_validation_data",
+        "nsubruns": 200,
         "max_futures": 20000
     },
     "workflow": {
-        "files_per_subrun": 32,
-	"cores_per_worker": 8,
-        "larcv_path": "/lus/eagle/projects/neutrinoGPU/sbnd/mc/larcv_test_files"
+        "files_per_subrun": 16,
+        "cores_per_worker": 8,
+        "larcv_path": "/lus/eagle/projects/neutrinoGPU/sbnd/data/larcv"
     },
     "spine": {
         "exe": "/lus/grand/projects/neutrinoGPU/software/spine_develop/bin/run.py",
         "container": "/lus/grand/projects/neutrinoGPU/software/spine_develop/larcv2_ub2204-cuda121-torch251-larndsim.sif",
         "opt0finder": "/lus/grand/projects/neutrinoGPU/software/OpT0Finder",
-        "config": "/lus/grand/projects/neutrinoGPU/software/spine_prod_patched/config/sbnd/sbnd_full_chain_240918.cfg",
-        "weights": "/lus/grand/projects/neutrinoGPU/spine_weights/snapshot-2999.ckpt"
+        "config": "/lus/grand/projects/neutrinoGPU/software/spine_prod/config/sbnd/sbnd_full_chain_data_250328.cfg",
+        "weights": "/lus/eagle/projects/neutrinoGPU/bearc/spine_weights/mpvmpr_v02/weights/full_chain/grappa_inter/default/snapshot-4999.ckpt",
+        "version": "v0.4.0"
     },
     "queue": {
         "queue": "debug",
@@ -24,6 +25,11 @@
         "init_blocks": 1,
         "max_blocks": 1,
         "allocation": "neutrinoGPU",
-        "retries": 0
+        "retries": 5
+    },
+    "metadata": {
+        "production.name": "PolarisTest",
+        "production.type": "polaris",
+        "sbnd_project.name": "MCP2025Av3_DevSample_bnblight_v10_04_06_01_spine"
     }
 }
