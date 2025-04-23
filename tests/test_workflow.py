@@ -60,3 +60,28 @@ def test_run_stage():
             next(run_stage(s1, fcls))
         except StopIteration:
             break
+
+def test_combine():
+    stage_order = [StageType.GEN, StageType.G4, StageType.DETSIM]
+    fcls = {StageType.GEN: 'gen.fcl', StageType.G4: 'g4.fcl', StageType.DETSIM: 'detsim.fcl'}
+    s1 = Stage(StageType.DETSIM, stage_order=stage_order)
+    s2 = Stage(StageType.G4, stage_order=stage_order)
+    s3 = Stage(StageType.GEN, stage_order=stage_order)
+
+    # combine: when we call next() below, we should get all stages executed
+    # instead of 1 per next() call since all stages are marked as combine
+    s1.combine = True
+    s2.combine = True
+    s3.combine = True
+
+    s2.add_parents(s3, fcls)
+    s1.add_parents(s2, fcls)
+    runs = 0
+    while True:
+        try:
+            next(run_stage(s1, fcls))
+            runs += 1
+        except StopIteration:
+            break
+
+    assert runs == 1
