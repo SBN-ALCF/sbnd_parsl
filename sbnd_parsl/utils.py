@@ -45,7 +45,7 @@ def create_provider_by_hostname(user_opts, spack_opts):
     if len(spack_opts) == 2:
         spack_top = spack_opts[0]
         version = spack_opts[1]
-        worker_init = _worker_init(spack_top=spack_top, spack_version=version, mps=True, venv_name='sbn')
+        worker_init = _worker_init(spack_top=spack_top, spack_version=version, mps=True, venv_name=user_opts.get("worker_venv_name", "sbn"))
     else:
         worker_init = _worker_init(mps=True, venv_name='sbn')
 
