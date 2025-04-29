@@ -3,40 +3,18 @@
 import json
 from datetime import datetime
 import numpy as np
-import matplotlib
-import matplotlib.pyplot as plt
-from matplotlib.ticker import AutoMinorLocator, MultipleLocator, MaxNLocator
-from matplotlib.dates import AutoDateLocator
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
-
-# XeTeX backend. Only use if needed, otherwise it's slow
-# matplotlib.use('pgf')
-
-THEME = {
-    'font': {'weight': 'normal', 'size': 8, 'family': 'DejaVu Sans'},
-    'xtick': {'direction': 'in' , 'top': 'on'},
-    'ytick': {'direction': 'in' , 'right': 'on'},
-    'grid': {'color': 'lightgray', 'linestyle': 'dotted'},
-    'axes': {'axisbelow': True},
-    'legend': {'frameon': False},
-    'pgf': {'preamble': '\n'.join(
-        [
-            r'\usepackage{siunitx}',
-            r'\sisetup{mode = text, per-mode = symbol}',
-            r'\DeclareSIUnit\ev{\electronvolt}',
-            r'\usepackage{mathspec}',
-            r'\setmathfont(Digits,Latin,Greek){Helvetica}'
-        ]
-    )},
-}
-
-[matplotlib.rc(key, **val) for key, val in THEME.items()]
-
-CM = 1/2.54
-LOG_NAME = '/home/nathanielerowe/log.json'
+import argparse
 
 def main():
-    with open(LOG_NAME, 'r') as f:
+    parser = argparse.ArgumentParser(description='Plot SPINE node log')
+    parser.add_argument('-l', '--log', type=str, required=True, help='Path to the log file')
+    parser.add_argument('-o', '--output', default='~/cpu_run_demo', type=str, help='Path to the output plot')
+    args = parser.parse_args()
+
+    with open(args.log, 'r') as f:
         json_log = json.loads(f.read())
 
     nrecords = len(json_log)
@@ -83,68 +61,86 @@ def main():
             if key not in mem_data:
                 mem_data[key] = np.zeros(nrecords)
             mem_data[key][i] = val
-        
 
-    nrows = 5
-    fig, ax = plt.subplots(nrows, 1, figsize=(16 * CM, 20 * CM))
-    ax = ax.flatten()
+    # Create subplots with 4 rows
+    fig = make_subplots(rows=4, cols=1, 
+                        subplot_titles=("Number of Processes", 
+                                        "Per-core CPU Usage (A.U.)", 
+                                        "GPU Usage (%)", 
+                                        "Memory Usage (GB)"),
+                        shared_xaxes=True,
+                        vertical_spacing=0.1)
 
-    date_formatter = matplotlib.dates.DateFormatter('%b %d\n%H:%M')
-    ax[0].xaxis.set_major_locator(AutoDateLocator(maxticks=6))
-    ax[0].xaxis.set_major_formatter(date_formatter)
-    ax[0].xaxis.set_minor_locator(AutoMinorLocator())
-    for i, a in enumerate(ax):
-        a.sharex(ax[0])
-        a.grid()
-        a.margins(0)
-        a.yaxis.set_minor_locator(AutoMinorLocator())
-        if i < nrows - 1:
-            a.tick_params(labelbottom=False)
-    # fig.subplots_adjust(hspace=0)
-    
+    # Plot 1: Processes
     totals = np.zeros(nrecords)
-    for pid, label in pid_data.items():
-        try:
-            ax[0].plot(times, pid_data[pid])
-            totals += pid_data[pid]
-        except KeyError:
-            continue
+    for pid, data in pid_data.items():
+        fig.add_trace(
+            go.Scatter(x=times, y=data, name=f"PID {pid}", mode="lines"),
+            row=1, col=1
+        )
+        totals += data
+    
+    fig.add_trace(
+        go.Scatter(x=times, y=totals, name="Total", mode="lines", 
+                  line=dict(color="black", dash="dashdot")),
+        row=1, col=1
+    )
+    fig.update_yaxes(range=[0, 36], row=1, col=1)
 
-    # processes plot
-    ax[0].axhline(32, color='gray', linestyle='--')
-    ax[0].plot(times, totals, linestyle='-.', color='k', label='Total')
-    ax[0].legend()
-    ax[0].set_ylabel('Number of Processes')
-    ax[0].set_ylim(0, 36)
-
+    # Plot 2: CPU Usage
     for i, cpu_vals in enumerate(reversed(cpu_data.items())):
         cpu, vals = cpu_vals
-        ax[1].plot(times, vals + i * 0.1, label=cpu)
-    ax[1].set_ylabel('Per-core CPU Usage (A.U.)')
-    ax[1].set_ylim(0, len(cpu_data) * 0.1 + 1.5)
+        fig.add_trace(
+            go.Scatter(x=times, y=vals + i * 0.1, name=f"CPU {cpu}", mode="lines"),
+            row=2, col=1
+        )
+    fig.update_yaxes(range=[0, len(cpu_data) * 0.1 + 1.5], row=2, col=1)
 
+    # Plot 3: GPU Usage
     for gpu, vals in gpu_data.items():
-        ax[2].plot(times, vals['gpu'], label=gpu)
-    ax[2].set_ylim(0, 110)
-    ax[2].legend()
-    ax[2].set_ylabel('GPU Usage (%)')
+        fig.add_trace(
+            go.Scatter(x=times, y=vals, name=f"GPU {gpu}", mode="lines"),
+            row=3, col=1
+        )
+    fig.update_yaxes(range=[0, 110], row=3, col=1)
 
+    # Plot 4: Memory Usage
     max_mem = mem_data['total'][0] / (1024**2)
-    ax[3].plot(times, mem_data['used'] / (1024**2))
-    ax[3].axhline(max_mem, color='gray', linestyle='--')
-    ax[3].set_ylabel('Memory Usage (GB)')
-    ax[3].set_ylim(0, max_mem * 1.1)
+    fig.add_trace(
+        go.Scatter(x=times, y=mem_data['used'] / (1024**2), name="Used Memory", mode="lines"),
+        row=4, col=1
+    )
+    fig.add_trace(
+        go.Scatter(x=[times[0], times[-1]], y=[max_mem, max_mem], 
+                  name="Total Memory", mode="lines", 
+                  line=dict(color="gray", dash="dash")),
+        row=4, col=1
+    )
+    fig.update_yaxes(range=[0, max_mem * 1.1], row=4, col=1)
 
-    for gpu, vals in gpu_data.items():
-        ax[4].plot(times,  vals['mem'], label=gpu)
-    ax[4].axhline(max_gpu_mem, color='gray', linestyle='--')
-    ax[4].set_ylim(0, 1.1*max_gpu_mem)
-    ax[4].legend()
-    ax[4].set_ylabel('GPU Memory Usage (GB)')
+    # Update layout
+    fig.update_layout(
+        height=800,
+        width=1000,
+        title_text="System Monitoring",
+        showlegend=True,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=0.,
+            xanchor="center",
+            x=1.5
+        ),
+        template="plotly_white"
+    )
 
-    plt.tight_layout()
-    plt.savefig('cpu_run_demo.png')
+    # Add grid to all subplots
+    fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
+    fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
+
+    # Save
+    fig.write_html(f'{args.output}.html')
+    fig.write_image(f'{args.output}.png')
 
 if __name__ == '__main__':
     main()
-
