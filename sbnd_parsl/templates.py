@@ -32,6 +32,8 @@ echo $CUDA_VISIBLE_DEVICES
 
 # define a function so the job can find the full path to fcl by name
 FIND_FCL = r'''
+echo "Defining fcl lookup function"
+echo "FHICL_FILE_PATH=$FHICL_FILE_PATH"
 function find_fcl() {{
     if [ "$1" != "${{1#/}}" ]; then
         # absolute path
@@ -322,10 +324,13 @@ echo "Move fcl."
 
 {FIND_FCL}
 fhicl_from_env=$(find_fcl {{fhicl}})
-cp $fhicl_from_env {{workdir}}/
+if [ -f $fhicl_from_env ]; then
+    cp $fhicl_from_env {{workdir}}/
+else
+    echo "Could not find fcl! Expect subsequent commands to fail."
+fi
 export LOCAL_FCL=$(basename {{fhicl}})
 
-echo "FHICL_FILE_PATH=$FHICL_FILE_PATH"
 echo "fhicl_from_env=$fhicl_from_env"
 echo "LOCAL_FCL=$LOCAL_FCL"
 

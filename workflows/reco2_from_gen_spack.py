@@ -149,7 +149,7 @@ def main(settings):
     user_opts = create_default_useropts()
     user_opts['run_dir'] = str(pathlib.Path(settings['run']['output']) / 'runinfo')
     user_opts.update(settings['queue'])
-    parsl_config = create_parsl_config(user_opts, [settings['larsoft']['spack_top'], settings['larsoft']['version']])
+    parsl_config = create_parsl_config(user_opts, [settings['larsoft']['spack_top'], settings['larsoft']['version'], settings['larsoft']['software']])
     print(parsl_config)
     parsl.clear()
     with parsl.load(parsl_config):

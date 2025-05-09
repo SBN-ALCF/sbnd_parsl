@@ -13,14 +13,14 @@ from parsl.launchers import MpiExecLauncher, GnuParallelLauncher
 from parsl.monitoring.monitoring import MonitoringHub
 
 
-def _worker_init(spack_top=None, spack_version='', mps: bool=True, venv_name='sbn'):
+def _worker_init(spack_top=None, spack_version='', software='sbndcode', mps: bool=True, venv_name='sbn'):
     """Return list of worker init commands based on the options."""
     cmds = []
     if spack_top is not None:
         cmds += [
             f'source {pathlib.Path(spack_top, "share/spack/setup-env.sh")}',
-            f'spack env activate sbndcode-{spack_version}_env',
-            'spack load sbndcode'
+            f'spack env activate {software}-{spack_version}_env',
+            f'spack load {software}'
         ]
     if venv_name:
         cmds += [
@@ -42,10 +42,11 @@ def _worker_init(spack_top=None, spack_version='', mps: bool=True, venv_name='sb
 def create_provider_by_hostname(user_opts, spack_opts):
     hostname = socket.gethostname()
 
-    if len(spack_opts) == 2:
+    if len(spack_opts) >= 2:
         spack_top = spack_opts[0]
         version = spack_opts[1]
-        worker_init = _worker_init(spack_top=spack_top, spack_version=version, mps=True, venv_name=user_opts.get("worker_venv_name", "sbn"))
+        software = spack_opts[2]
+        worker_init = _worker_init(spack_top=spack_top, spack_version=version, software=software, mps=True, venv_name=user_opts.get("worker_venv_name", "sbn"))
     else:
         worker_init = _worker_init(mps=True, venv_name='sbn')
 
