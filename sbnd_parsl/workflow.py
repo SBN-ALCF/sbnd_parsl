@@ -349,7 +349,7 @@ class Workflow:
         """Add the final stage to the workflow as a generator expression."""
         self._stage.add_parents(stage, self.default_fcls)
 
-    def get_next_task(self, mode='cycle'):
+    def get_next_task(self):
         """
         Run the workflow by individually running the added stages. Can either
         cycle through end stages (grab one task from each stage at a time) or
@@ -423,7 +423,7 @@ class WorkflowExecutor:
             idx = next(idx_cycle)
             if idx in skip_idx:
                 continue
-            print(f'waiting for workflows to submit tasks ({len(skip_idx)})')
+            # print(f'waiting for workflows to submit tasks ({len(skip_idx)})')
 
             if wfs[idx] is None:
                 # get a list of files

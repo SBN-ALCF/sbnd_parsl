@@ -12,7 +12,7 @@ from parsl.launchers import MpiExecLauncher, GnuParallelLauncher
 from parsl.monitoring.monitoring import MonitoringHub
 
 
-def _worker_init(spack_top=None, spack_version='', software='sbndcode', mps: bool=True, venv_name='sbn'):
+def _worker_init(spack_top=None, spack_version='', software='sbndcode', mps: bool=True, venv_name=None):
     """Return list of worker init commands based on the options."""
     cmds = []
     if spack_top is not None:
@@ -22,11 +22,23 @@ def _worker_init(spack_top=None, spack_version='', software='sbndcode', mps: boo
             f'spack load {software}'
         ]
     if venv_name:
-        cmds += [
-            'module use /soft/modulefiles',
-            'module load conda',
-            f'conda activate {venv_name}'
-        ]
+        hostname = socket.gethostname()
+        if 'polaris' in hostname:
+            # use conda
+            cmds += [
+                'module use /soft/modulefiles',
+                'module load conda',
+                f'conda activate {venv_name}'
+            ]
+        elif 'aurora' in hostname:
+            # use pip with frameworks
+            cmds += [
+                'module load frameworks',
+                f'source ~/.venv/{venv_name}/bin/activate'
+            ]
+        else:
+            raise RuntimeError(f"Don't know how to load virtual environments on machine {hostname}")
+
     if mps:
         cmds += [
             'export CUDA_MPS_PIPE_DIRECTORY=/tmp/nvidia-mps',
@@ -74,27 +86,13 @@ def create_provider_by_hostname(user_opts, spack_opts):
             max_blocks      = user_opts.get("max_blocks", 1),
             walltime        = user_opts.get("walltime", "1:00:00"),
             cmd_timeout     = 240,
-            scheduler_options = '#PBS -l filesystems=home:grand:eagle\n#PBS -l place=scatter',
+            scheduler_options = '#PBS -l filesystems=home:flare',
             launcher        = MpiExecLauncher(bind_cmd="--cpu-bind", overrides="--ppn 1"),
             worker_init     = worker_init
         )
 
 def create_executor_by_hostname(user_opts, provider):
     hostname = socket.gethostname()
-    # if "ngpus" in user_opts.get("select_options", "ngpus=0"):
-    #     ngpus = int(user_opts["select_options"].split("ngpus=",1)[1])
-
-    # if 'polaris' in hostname and ngpus > 0:
-    #     from parsl import WorkQueueExecutor
-    #     return WorkQueueExecutor(
-    #                 label="htex",
-    #                 address=address_by_interface("bond0"),
-    #                 provider=provider,
-    #                 worker_options="--gpus 32 --cores 32",
-    #                 full_debug=True,
-    #                 port=0,
-    #             )
-
     if 'polaris' in hostname:
         from parsl import HighThroughputExecutor
         return HighThroughputExecutor(
@@ -114,6 +112,7 @@ def create_executor_by_hostname(user_opts, provider):
             working_dir=str(pathlib.Path(user_opts["run_dir"]) / 'cmd')
         )
     elif 'aurora' in hostname:
+        # see: https://docs.alcf.anl.gov/aurora/workflows/parsl/
         from parsl import HighThroughputExecutor
         tile_names = [f'{gid}.{tid}' for gid in range(6) for tid in range(2)]
         return HighThroughputExecutor(
@@ -123,7 +122,6 @@ def create_executor_by_hostname(user_opts, provider):
             worker_debug=True,
             max_workers_per_node=user_opts["cpus_per_node"],
             available_accelerators=tile_names,
-            address=address_by_interface("bond0"),
             address_probe_timeout=120,
             cpu_affinity="list:1-8,105-112:9-16,113-120:17-24,121-128:25-32,129-136:33-40,137-144:41-48,145-152:53-60,157-164:61-68,165-172:69-76,173-180:77-84,181-188:85-92,189-196:93-100,197-204",
             prefetch_capacity=0,
@@ -143,7 +141,7 @@ def create_executor_by_hostname(user_opts, provider):
 def create_default_useropts(**kwargs):
     hostname = socket.gethostname()
 
-    if 'polaris' in hostname:
+    if 'polaris' in hostname or 'aurora' in hostname:
         # Then, we're likely on the login node of polaris and want to submit via parsl:
         user_opts = {
             # Node setup: activate necessary conda environment and such.
