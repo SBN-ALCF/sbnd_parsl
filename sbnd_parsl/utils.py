@@ -2,13 +2,12 @@ import socket
 import pathlib
 import hashlib
 
-import ndcctools.work_queue
 from parsl.config import Config
 
 from parsl.addresses import address_by_interface
 from parsl.utils import get_all_checkpoints
 from parsl.providers import PBSProProvider, LocalProvider
-from parsl.executors import HighThroughputExecutor, ThreadPoolExecutor, WorkQueueExecutor
+from parsl.executors import HighThroughputExecutor, ThreadPoolExecutor
 from parsl.launchers import MpiExecLauncher, GnuParallelLauncher
 from parsl.monitoring.monitoring import MonitoringHub
 
@@ -48,10 +47,11 @@ def create_provider_by_hostname(user_opts, spack_opts):
         software = spack_opts[2]
         worker_init = _worker_init(spack_top=spack_top, spack_version=version, software=software, mps=True, venv_name=user_opts.get("worker_venv_name", "sbn"))
     else:
-        worker_init = _worker_init(mps=True, venv_name='sbn')
+        mps = 'polaris' in hostname
+        worker_init = _worker_init(mps=mps, venv_name='sbn')
 
     if 'polaris' in hostname:
-        provider = PBSProProvider(
+        return PBSProProvider(
             account         = user_opts["allocation"],
             queue           = user_opts.get("queue", "debug"),
             nodes_per_block = user_opts.get("nodes_per_block", 1),
@@ -61,18 +61,28 @@ def create_provider_by_hostname(user_opts, spack_opts):
             walltime        = user_opts.get("walltime", "1:00:00"),
             cmd_timeout     = 240,
             scheduler_options = '#PBS -l filesystems=home:grand:eagle\n#PBS -l place=scatter',
-            # select_options  = user_opts.get("select_options", "ngpus=0"),
             launcher        = MpiExecLauncher(bind_cmd="--cpu-bind", overrides="--depth=64 --ppn 1"),
             worker_init     = worker_init
         )
-        return provider
-    else:
-        return LocalProvider()
+    elif 'aurora' in hostname:
+        return PBSProProvider(
+            account         = user_opts["allocation"],
+            queue           = user_opts.get("queue", "debug"),
+            nodes_per_block = user_opts.get("nodes_per_block", 1),
+            cpus_per_node   = user_opts.get("cpus_per_node", 208),
+            init_blocks     = user_opts.get("init_blocks", 1),
+            max_blocks      = user_opts.get("max_blocks", 1),
+            walltime        = user_opts.get("walltime", "1:00:00"),
+            cmd_timeout     = 240,
+            scheduler_options = '#PBS -l filesystems=home:grand:eagle\n#PBS -l place=scatter',
+            launcher        = MpiExecLauncher(bind_cmd="--cpu-bind", overrides="--ppn 1"),
+            worker_init     = worker_init
+        )
 
 def create_executor_by_hostname(user_opts, provider):
     hostname = socket.gethostname()
-    if "ngpus" in user_opts.get("select_options", "ngpus=0"):
-        ngpus = int(user_opts["select_options"].split("ngpus=",1)[1])
+    # if "ngpus" in user_opts.get("select_options", "ngpus=0"):
+    #     ngpus = int(user_opts["select_options"].split("ngpus=",1)[1])
 
     # if 'polaris' in hostname and ngpus > 0:
     #     from parsl import WorkQueueExecutor
@@ -103,7 +113,24 @@ def create_executor_by_hostname(user_opts, provider):
             block_error_handler=False,
             working_dir=str(pathlib.Path(user_opts["run_dir"]) / 'cmd')
         )
-
+    elif 'aurora' in hostname:
+        from parsl import HighThroughputExecutor
+        tile_names = [f'{gid}.{tid}' for gid in range(6) for tid in range(2)]
+        return HighThroughputExecutor(
+            label="htex",
+            heartbeat_period=15,
+            heartbeat_threshold=120,
+            worker_debug=True,
+            max_workers_per_node=user_opts["cpus_per_node"],
+            available_accelerators=tile_names,
+            address=address_by_interface("bond0"),
+            address_probe_timeout=120,
+            cpu_affinity="list:1-8,105-112:9-16,113-120:17-24,121-128:25-32,129-136:33-40,137-144:41-48,145-152:53-60,157-164:61-68,165-172:69-76,173-180:77-84,181-188:85-92,189-196:93-100,197-204",
+            prefetch_capacity=0,
+            provider=provider,
+            block_error_handler=False,
+            working_dir=str(pathlib.Path(user_opts["run_dir"]) / 'cmd')
+        )
     else:
         # default: 
         from parsl import ThreadPoolExecutor
