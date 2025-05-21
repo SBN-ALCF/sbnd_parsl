@@ -3,11 +3,11 @@
         "output": "/lus/eagle/projects/neutrinoGPU/twester/v10_icarus/",
         "fclpath": "/lus/eagle/projects/neutrinoGPU/sbnd/data/icarus",
         "nsubruns": 1,
+        "files_per_subrun": 1,
         "max_futures": 20000,
         "seed": 1234
     },
     "workflow": {
-        "files_per_subrun": 10,
         "rawdata_path": "/lus/eagle/projects/neutrinoGPU/sbnd/data/icarus/run4"
     },
     "larsoft": {
@@ -22,7 +22,7 @@
         "queue": "gpu_hack_sm",
         "walltime": "1:00:00",
         "select_options": "ngpus=32",
-        "cores_per_worker": 1,
+        "cores_per_worker": 4,
         "nodes_per_block": 1,
         "init_blocks": 1,
         "max_blocks": 1,
@@ -30,7 +30,7 @@
         "retries": 0
     },
     "fcls": {
-        "reco1": "stage0_run2_wcdnn_icarus.fcl",
+        "reco1": "/home/twester/scratch/stage0_run2_wcdnn_icarus.fcl",
         "reco2": "stage1_run2_icarus.fcl",
         "caf": "cafmakerjob_icarus_data.fcl"
     }

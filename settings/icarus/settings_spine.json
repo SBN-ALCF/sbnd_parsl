@@ -5,8 +5,10 @@
         "max_futures": 10000
     },
     "spine": {
-        "container": "/lus/grand/projects/neutrinoGPU/software/spine/larcv2_ub20.04-cuda12.1-pytorch2.2.1-larndsim.sif",
-        "config": "/lus/grand/projects/neutrinoGPU/software/spine/configs/icarus_full_chain_240719.cfg"
+        "exe": "/lus/grand/projects/neutrinoGPU/software/spine_develop/bin/run.py",
+        "container": "/lus/grand/projects/neutrinoGPU/software/spine_develop/larcv2_ub22.04-cuda12.1-pytorch2.4.0-larndsim-2024-09-03.sif",
+        "opt0finder": "/lus/grand/projects/neutrinoGPU/software/OpT0Finder",
+        "config": "/lus/grand/projects/neutrinoGPU/software/spine_prod/config/sbnd/sbnd_full_chain_240918.cfg"
     },
     "inputs": "/lus/grand/projects/neutrinoGPU/software/spine/inputs/icarus_test_list.txt",
     "workflow":  {

@@ -23,8 +23,7 @@ from sbnd_parsl.utils import create_default_useropts, create_parsl_config, \
 
 # SBND_RAWDATA_REGEXP = re.compile(r".*data_.*run(\d+)_.*\.root")
 
-@bash_app(cache=True)
-def fcl_future(workdir, stdout, stderr, template, larsoft_opts, inputs=[], outputs=[], pre_job_hook='', post_job_hook=''):
+def fcl_future(workdir, stdout, stderr, template, cmd, larsoft_opts, inputs=[], outputs=[], pre_job_hook='', post_job_hook=''):
     """Return formatted bash script which produces each future when executed."""
     return template.format(
         fhicl=inputs[0],
@@ -119,16 +118,6 @@ def runfunc(self, fcl, inputs, run_dir, executor, nevts=-1, nskip=0):
         inputs = input_arg,
         outputs = [File(str(output_file))],
     )
-    print(CMD_TEMPLATE_SPACK.format(
-        fhicl=input_arg[0],
-        workdir=str(run_dir),
-        output=File(str(output_file)),
-        input=input_arg[1],
-        cmd=cmd,
-        **executor.larsoft_opts,
-        pre_job_hook='',
-        post_job_hook='',
-    ))
 
     # this modifies the list passed in by WorkflowExecutor
     executor.futures.append(future.outputs[0])
@@ -143,7 +132,7 @@ class DecoderExecutor(WorkflowExecutor):
 
         # self.meta = MetadataGenerator(settings['metadata'], self.fcls, defer_check=True)
         self.stage_order = [StageType.from_str(key) for key in self.fcls.keys()]
-        self.files_per_subrun = settings['workflow']['files_per_subrun']
+        self.files_per_subrun = settings['run']['files_per_subrun']
         self.run_list = None
         if 'run_list' in settings['workflow']:
             with open(settings['workflow']['run_list'], 'r') as f:
@@ -151,53 +140,11 @@ class DecoderExecutor(WorkflowExecutor):
 
         self.rawdata_path = pathlib.Path(settings['workflow']['rawdata_path'])
 
-
-    def execute(self):
-        """Override to create workflows from N files instead of iteration number."""
-        # rawdata_generators = [self.rawdata_path.rglob(f'{run:06d}/data*Muon*.root') for run in self.run_list]
-        rawdata_generators = [self.rawdata_path.rglob('data*.root')]
-        rawdata_files = itertools.chain(*rawdata_generators)
-
-        nsubruns = self.run_opts['nsubruns']
-
-        idx_cycle = itertools.cycle(range(nsubruns))
-        wfs = [None] * nsubruns
-        skip_idx = set()
-
-        while len(skip_idx) < nsubruns:
-            idx = next(idx_cycle)
-            if idx in skip_idx:
-                continue
-
-            if wfs[idx] is None:
-                rawdata_slice = list(itertools.islice(rawdata_files, self.files_per_subrun))
-                if not rawdata_slice:
-                    skip_idx.add(idx)
-                    continue
-                wfs[idx] = self.setup_single_workflow(idx, rawdata_slice)
-
-            # rate-limit the number of concurrent futures to avoid using too
-            # much memory on login nodes
-            while len(self.futures) > self.max_futures:
-                self.get_task_results()
-                print(f'Waiting: Current futures={len(self.futures)}')
-                time.sleep(10)
-
-            try:
-                while True:
-                    next(wfs[idx].get_next_task())
-                    # if not self.futures[-1].done():
-                    #     break
-            except StopIteration:
-                skip_idx.add(idx)
-
-                # let garbage collection happen
-                # del wfs[idx]
-                wfs[idx] = None
-        
-        while len(self.futures) > 0:
-            self.get_task_results()
-            time.sleep(10)
+    def file_generator(self):
+        path_generators = [self.rawdata_path.rglob('data*.root')]
+        generator = itertools.chain(*path_generators)
+        for f in generator:
+            yield f
 
     def setup_single_workflow(self, iteration: int, rawdata_files: List[pathlib.Path]):
         if not rawdata_files:

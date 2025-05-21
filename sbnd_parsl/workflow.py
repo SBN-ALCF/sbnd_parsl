@@ -390,6 +390,10 @@ class WorkflowExecutor:
         self.workflow_opts = settings['workflow']
         self.workflow = None
 
+    def file_generator(self):
+        with open(self.run_opts['file_list'], 'r') as f:
+            for line in f.readlines():
+                yield pathlib.Path(f)
 
     def execute(self):
         """
@@ -401,6 +405,10 @@ class WorkflowExecutor:
         """
 
         nsubruns = self.run_opts['nsubruns']
+        by_file = False
+        if 'files_per_subrun' in self.run_opts:
+            # each subrun processes a slice of files
+            by_file = True
 
         # generator madness...
         # we'll cycle over indices until all tasks are submitted, taking one
@@ -412,15 +420,20 @@ class WorkflowExecutor:
         skip_idx = set()
 
         while len(skip_idx) < nsubruns:
-            print(f'waiting for workflows to submit tasks ({len(skip_idx)})')
             idx = next(idx_cycle)
             if idx in skip_idx:
                 continue
+            print(f'waiting for workflows to submit tasks ({len(skip_idx)})')
 
-            wf = wfs[idx]
-            if wf is None:
-                wf = self.setup_single_workflow(idx)
-                wfs[idx] = wf
+            if wfs[idx] is None:
+                # get a list of files
+                file_slice = None
+                if by_file:
+                    file_slice = list(itertools.islice(self.file_generator(), self.run_opts['files_per_subrun']))
+                    if not file_slice:
+                        skip_idx.add(idx)
+                        continue
+                wfs[idx] = self.setup_single_workflow(idx, file_slice)
 
             # rate-limit the number of concurrent futures to avoid using too
             # much memory on login nodes
@@ -432,7 +445,7 @@ class WorkflowExecutor:
                     time.sleep(10)
 
             try:
-                next(wf.get_next_task())
+                next(wfs[idx].get_next_task())
             except StopIteration:
                 skip_idx.add(idx)
 
@@ -460,7 +473,7 @@ class WorkflowExecutor:
         self.futures = list(filter(check_future_status, self.futures))
 
 
-    def setup_single_workflow(self, iteration: int):
+    def setup_single_workflow(self, iteration: int, inputs=None):
         # user should implement this
         pass
 

@@ -1,13 +1,13 @@
 {
     "run": {
-        "output": "your_output_dir",
-        "fclpath": "your_fcl_dir",
-        "nsubruns": 1,
+        "output": "/lus/eagle/projects/neutrinoGPU/sbnd/mc/v09_91_02_01/gpu_test_caf",
+        "fclpath": "/home/twester/sbnd/sbnd_parsl/fcls/v09_91_02_01",
+        "nsubruns": 8,
         "max_futures": 10000,
         "seed": 1234
     },
     "workflow": {
-        "subruns_per_caf": 20,
+        "subruns_per_caf": 32,
         "full_keep_fraction": 0.05
     },
     "larsoft": {
@@ -19,11 +19,11 @@
         "lar_args" : ""
     },
     "queue": {
-        "queue": "debug-scaling",
+        "queue": "debug",
         "walltime": "1:00:00",
         "select_options": "ngpus=4",
-        "nodes_per_block": 2,
-        "allocation": "neutrinoGPU"
+        "nodes_per_block": 1,
+        "allocation": "alcf_training"
     },
     "fcls": {
         "gen": "prodoverlay_corsika_cosmics_proton_genie_rockbox_sce.fcl",
