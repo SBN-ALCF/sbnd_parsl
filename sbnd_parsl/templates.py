@@ -355,8 +355,13 @@ set +e
 echo "moving files"
 echo "mv *.json $(dirname {{output}}) || true"
 mv *.json $(dirname {{output}}) || true
+
 echo "mv  *hist*root "$(dirname {{output}})/hists_$(basename {{output}})" || true"
 mv  *hist*root "$(dirname {{output}})/hists_$(basename {{output}})" || true
+
+echo "mv *.root $(dirname {{output}}) || true"
+mv *.root $(dirname {{output}}) || true
+
 {{post_job_hook}}
 {JOB_POST}
 '''

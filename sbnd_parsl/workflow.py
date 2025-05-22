@@ -221,10 +221,7 @@ class Stage:
                 s.run_dir = self.run_dir
             if s.runfunc is None:
                 s.runfunc = self.runfunc
-            # if s.fcl is None:
-            #     # spine jobs have no fcl
-            #     if s.stage_type != StageType.SPINE:
-            #         s.fcl = fcls[s.stage_type]
+
             self._parents_iterators.append((s, run_stage(s, fcls)))
 
     def get_next_task(self, mode='cycle'):

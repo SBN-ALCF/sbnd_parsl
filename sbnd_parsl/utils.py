@@ -12,6 +12,24 @@ from parsl.launchers import MpiExecLauncher, GnuParallelLauncher
 from parsl.monitoring.monitoring import MonitoringHub
 
 
+POLARIS_OPTS = {
+    'ncpus': 32,
+    'scheduler': '#PBS -l filesystems=home:grand:eagle\n#PBS -l place=scatter',
+    'launcher': '--depth=64 --ppn 1',
+    'cpu_affinity': 'alternating',
+    'available_accelerators': 32
+}
+
+
+AURORA_OPTS = {
+    'ncpus': 208,
+    'scheduler': '#PBS -l filesystems=home:flare',
+    'launcher': '--ppn 1',
+    'cpu_affinity': 'list:1-8,105-112:9-16,113-120:17-24,121-128:25-32,129-136:33-40,137-144:41-48,145-152:53-60,157-164:61-68,165-172:69-76,173-180:77-84,181-188:85-92,189-196:93-100,197-204',
+    'available_accelerators': [f'{gid}.{tid}' for gid in range(6) for tid in range(2)]
+}
+
+
 def _worker_init(spack_top=None, spack_version='', software='sbndcode', mps: bool=True, venv_name=None):
     """Return list of worker init commands based on the options."""
     cmds = []
@@ -50,9 +68,7 @@ def _worker_init(spack_top=None, spack_version='', software='sbndcode', mps: boo
     return '&&'.join(cmds)
 
 
-def create_provider_by_hostname(user_opts, spack_opts):
-    hostname = socket.gethostname()
-
+def create_provider_by_hostname(user_opts, system_opts, spack_opts):
     if len(spack_opts) >= 2:
         spack_top = spack_opts[0]
         version = spack_opts[1]
@@ -62,80 +78,38 @@ def create_provider_by_hostname(user_opts, spack_opts):
         mps = 'polaris' in hostname
         worker_init = _worker_init(mps=mps, venv_name='sbn')
 
-    if 'polaris' in hostname:
-        return PBSProProvider(
-            account         = user_opts["allocation"],
-            queue           = user_opts.get("queue", "debug"),
-            nodes_per_block = user_opts.get("nodes_per_block", 1),
-            cpus_per_node   = user_opts.get("cpus_per_node", 32),
-            init_blocks     = user_opts.get("init_blocks", 1),
-            max_blocks      = user_opts.get("max_blocks", 1),
-            walltime        = user_opts.get("walltime", "1:00:00"),
-            cmd_timeout     = 240,
-            scheduler_options = '#PBS -l filesystems=home:grand:eagle\n#PBS -l place=scatter',
-            launcher        = MpiExecLauncher(bind_cmd="--cpu-bind", overrides="--depth=64 --ppn 1"),
-            worker_init     = worker_init
-        )
-    elif 'aurora' in hostname:
-        return PBSProProvider(
-            account         = user_opts["allocation"],
-            queue           = user_opts.get("queue", "debug"),
-            nodes_per_block = user_opts.get("nodes_per_block", 1),
-            cpus_per_node   = user_opts.get("cpus_per_node", 208),
-            init_blocks     = user_opts.get("init_blocks", 1),
-            max_blocks      = user_opts.get("max_blocks", 1),
-            walltime        = user_opts.get("walltime", "1:00:00"),
-            cmd_timeout     = 240,
-            scheduler_options = '#PBS -l filesystems=home:flare',
-            launcher        = MpiExecLauncher(bind_cmd="--cpu-bind", overrides="--ppn 1"),
-            worker_init     = worker_init
-        )
+    return PBSProProvider(
+        account         = user_opts["allocation"],
+        queue           = user_opts.get("queue", "debug"),
+        nodes_per_block = user_opts.get("nodes_per_block", 1),
+        cpus_per_node   = user_opts.get("cpus_per_node", system_opts['ncpus']),
+        init_blocks     = user_opts.get("init_blocks", 1),
+        max_blocks      = user_opts.get("max_blocks", 1),
+        walltime        = user_opts.get("walltime", "1:00:00"),
+        cmd_timeout     = 240,
+        scheduler_options = system_opts['scheduler'],
+        launcher        = MpiExecLauncher(bind_cmd="--cpu-bind", overrides=system_opts['launcher']),
+        worker_init     = worker_init
+    )
 
-def create_executor_by_hostname(user_opts, provider):
-    hostname = socket.gethostname()
-    if 'polaris' in hostname:
-        from parsl import HighThroughputExecutor
-        return HighThroughputExecutor(
-            label="htex",
-            heartbeat_period=15,
-            heartbeat_threshold=120,
-            worker_debug=True,
-            max_workers_per_node=user_opts["cpus_per_node"],
-            cores_per_worker=user_opts["cores_per_worker"],
-            available_accelerators=ngpus,
-            address=address_by_interface("bond0"),
-            address_probe_timeout=120,
-            cpu_affinity="alternating",
-            prefetch_capacity=0,
-            provider=provider,
-            block_error_handler=False,
-            working_dir=str(pathlib.Path(user_opts["run_dir"]) / 'cmd')
-        )
-    elif 'aurora' in hostname:
-        # see: https://docs.alcf.anl.gov/aurora/workflows/parsl/
-        from parsl import HighThroughputExecutor
-        tile_names = [f'{gid}.{tid}' for gid in range(6) for tid in range(2)]
-        return HighThroughputExecutor(
-            label="htex",
-            heartbeat_period=15,
-            heartbeat_threshold=120,
-            worker_debug=True,
-            max_workers_per_node=user_opts["cpus_per_node"],
-            available_accelerators=tile_names,
-            address_probe_timeout=120,
-            cpu_affinity="list:1-8,105-112:9-16,113-120:17-24,121-128:25-32,129-136:33-40,137-144:41-48,145-152:53-60,157-164:61-68,165-172:69-76,173-180:77-84,181-188:85-92,189-196:93-100,197-204",
-            prefetch_capacity=0,
-            provider=provider,
-            block_error_handler=False,
-            working_dir=str(pathlib.Path(user_opts["run_dir"]) / 'cmd')
-        )
-    else:
-        # default: 
-        from parsl import ThreadPoolExecutor
-        return ThreadPoolExecutor(
-            label="threads",
-            max_threads=user_opts["cpus_per_node"]
-        )
+def create_executor_by_hostname(user_opts, system_opts, provider):
+    from parsl import HighThroughputExecutor
+    return HighThroughputExecutor(
+        label="htex",
+        heartbeat_period=15,
+        heartbeat_threshold=120,
+        worker_debug=True,
+        max_workers_per_node=user_opts["cpus_per_node"],
+        cores_per_worker=user_opts["cores_per_worker"],
+        available_accelerators=system_opts['available_accelerators'],
+        address=address_by_interface("bond0"),
+        address_probe_timeout=120,
+        cpu_affinity=system_opts['cpu_affinity'],
+        prefetch_capacity=0,
+        provider=provider,
+        block_error_handler=False,
+        working_dir=str(pathlib.Path(user_opts["run_dir"]) / 'cmd')
+    )
     
 
 def create_default_useropts(**kwargs):
@@ -167,10 +141,16 @@ def create_default_useropts(**kwargs):
 
 
 def create_parsl_config(user_opts, spack_opts=[]):
-    checkpoints = get_all_checkpoints(user_opts["run_dir"])
+    hostname = socket.gethostname()
+    system_opts = None
+    if 'polaris' in hostname:
+        system_opts = POLARIS_OPTS
+    elif 'aurora' in hostname:
+        system_opts = AURORA_OPTS
 
-    provider = create_provider_by_hostname(user_opts, spack_opts)
-    executor = create_executor_by_hostname(user_opts, provider)
+    provider = create_provider_by_hostname(user_opts, system_opts, spack_opts)
+    executor = create_executor_by_hostname(user_opts, system_opts, provider)
+    checkpoints = get_all_checkpoints(user_opts["run_dir"])
     config = Config(
             checkpoint_mode='task_exit',
             executors=[executor],

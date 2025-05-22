@@ -55,13 +55,14 @@ def runfunc(self, fcl, inputs, run_dir, executor, nevts=-1, nskip=0):
             str(self.stage_type.value), os.path.basename(first_file_name)
         ])
     else:
-        output_filename = os.path.splitext(os.path.basename(first_file_name))[0] + '.flat.caf.root'
+        output_filename = os.path.splitext(os.path.basename(first_file_name))[0] + '.Blind.OKTOLOOK.flat.caf.root'
 
     # run_number_str = SBND_RAWDATA_REGEXP.match(first_file_name).groups()[0]
     # output_dir = executor.output_dir / self.stage_type.value / run_number_str
     # output_dir.mkdir(parents=True, exist_ok=True)
 
-    output_dir = executor.output_dir / self.stage_type.value
+    output_dir = executor.output_dir / self.stage_type.value / f'{executor.run_counter // 10:06d}'
+    executor.run_counter += 1
     if self.combine:
         # if we are combining, save this stage's result only on node-local disk
         # output_dir.name gets the instance number for this task
@@ -73,7 +74,9 @@ def runfunc(self, fcl, inputs, run_dir, executor, nevts=-1, nskip=0):
 
 
     output_file = output_dir / output_filename
-    output_file_arg_str = f'--output {str(output_file)}'
+    output_file_arg_str = ''
+    if self.stage_type != StageType.CAF:
+        output_file_arg_str = f'--output {str(output_file)}'
 
     # output_filepath = output_dir / output_filename
 
@@ -139,6 +142,9 @@ class DecoderExecutor(WorkflowExecutor):
                 self.run_list = [int(l.strip()) for l in f.readlines()]
 
         self.rawdata_path = pathlib.Path(settings['workflow']['rawdata_path'])
+
+        # for organizing outputs
+        self.run_counter = 0
 
     def file_generator(self):
         path_generators = [self.rawdata_path.rglob('data*.root')]
