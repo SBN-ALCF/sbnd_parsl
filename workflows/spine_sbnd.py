@@ -115,55 +115,21 @@ class SpineExecutor(WorkflowExecutor):
         super().__init__(settings)
 
         self.stage_order = [StageType.SPINE]
-        self.files_per_subrun = settings['workflow']['files_per_subrun']
+        self.files_per_subrun = settings['run']['files_per_subrun']
         self.larcv_path = pathlib.Path(settings['workflow']['larcv_path'])
         self.spine_opts = settings['spine']
+        self.filelist = settings['workflow']['filelist']
 
         self.spine_opts.update({'cores_per_worker': settings['workflow']['cores_per_worker']})
 
-    def execute(self):
-        """Override to create workflows from N files instead of iteration number."""
-        spine_input_generator = self.larcv_path.rglob('larcv_data*.root')
-        nsubruns = self.run_opts['nsubruns']
-
-        idx_cycle = itertools.cycle(range(nsubruns))
-        wfs = [None] * nsubruns
-        skip_idx = set()
-
-        while len(skip_idx) < nsubruns:
-            idx = next(idx_cycle)
-            if idx in skip_idx:
-                continue
-
-            if wfs[idx] is None:
-                input_slice = list(itertools.islice(spine_input_generator, self.files_per_subrun))
-                if not input_slice:
-                    skip_idx.add(idx)
-                    continue
-                wfs[idx] = self.setup_single_workflow(idx, input_slice)
-
-            # rate-limit the number of concurrent futures to avoid using too
-            # much memory on login nodes
-            while len(self.futures) > self.max_futures:
-                self.get_task_results()
-                print(f'Waiting: Current futures={len(self.futures)}')
-                time.sleep(10)
-
-            try:
-                while True:
-                    next(wfs[idx].get_next_task())
-                    # if not self.futures[-1].done():
-                    #     break
-            except StopIteration:
-                skip_idx.add(idx)
-
-                # let garbage collection happen
-                # del wfs[idx]
-                wfs[idx] = None
-        
-        while len(self.futures) > 0:
-            self.get_task_results()
-            time.sleep(10)
+    def file_generator(self):
+        # path_generators = [self.larcv_path.rglob('larcv_data*.root')]
+        # generator = itertools.chain(*path_generators)
+        # for f in generator:
+        #     yield f
+        with open(self.filelist, 'r') as f:
+            for line in f.readlines():
+                yield pathlib.Path(line.strip())
 
     def setup_single_workflow(self, iteration: int, larcv_files: List[pathlib.Path]):
         if not larcv_files:
