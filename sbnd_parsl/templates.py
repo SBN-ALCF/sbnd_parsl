@@ -89,10 +89,9 @@ singularity run -B /lus/eagle/ -B /lus/grand/ --nv {{container}} <<EOL
         echo \$FMATCH_LIBDIR
     fi
     python {{exe}} -c $TMP_CFG -S {{input}}
-
-    echo "moving files"
-    mv *.h5 $(dirname {{output}}) || true
 EOL
+echo "moving files"
+mv *.h5 $(dirname {{output}}) || true
 {{post_job_hook}}
 {JOB_POST}
 '''

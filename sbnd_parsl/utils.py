@@ -69,6 +69,7 @@ def _worker_init(spack_top=None, spack_version='', software='sbndcode', mps: boo
 
 
 def create_provider_by_hostname(user_opts, system_opts, spack_opts):
+    hostname = socket.gethostname()
     if len(spack_opts) >= 2:
         spack_top = spack_opts[0]
         version = spack_opts[1]

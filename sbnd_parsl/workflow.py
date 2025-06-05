@@ -103,8 +103,8 @@ class Stage:
             stage_type = StageType.from_str(stage_type)
         self._stage_type: StageType = stage_type
         self.fcl = fcl
+        self.runfunc = runfunc
         self.run_dir = None
-        self.runfunc = None
 
         # override for custom stage order, otherwise this is set by the Workflow
         self.stage_order = stage_order
@@ -402,9 +402,11 @@ class WorkflowExecutor:
         """
 
         nsubruns = self.run_opts['nsubruns']
+        file_generator = None
         by_file = False
         if 'files_per_subrun' in self.run_opts:
             # each subrun processes a slice of files
+            file_generator = self.file_generator()
             by_file = True
 
         # generator madness...
@@ -426,7 +428,7 @@ class WorkflowExecutor:
                 # get a list of files
                 file_slice = None
                 if by_file:
-                    file_slice = list(itertools.islice(self.file_generator(), self.run_opts['files_per_subrun']))
+                    file_slice = list(itertools.islice(file_generator, self.run_opts['files_per_subrun']))
                     if not file_slice:
                         skip_idx.add(idx)
                         continue
