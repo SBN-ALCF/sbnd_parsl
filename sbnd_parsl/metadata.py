@@ -48,9 +48,14 @@ class MetadataGenerator:
 
         if len(fclnames) == 0:
             raise ValueError("Need to provide at least one stagename and corresponding fcl filename")
+
+        # copy to resolve absolute paths
+        self.fclnames = fclnames.copy()
+        for stage, fcl in self.fclnames.items():
+            self.fclnames[stage] = pathlib.Path(fcl).name
+
         self.metadata = MetadataGenerator.defaults.copy()
         self.metadata.update(settings)
-        self.fclnames = fclnames
 
         # project name is the first fcl in the chain
         self.metadata["mdprojectname"] = list(fclnames.values())[0].replace('.fcl', '')

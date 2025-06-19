@@ -377,9 +377,9 @@ class WorkflowExecutor:
         self.fcls = {}
         try:
             self.fcl_dir = Path(self.run_opts['fclpath'])
-            self.fcls = settings['fcls']
         except KeyError:
             pass
+        self.fcls = settings['fcls']
 
         self.futures = []
 

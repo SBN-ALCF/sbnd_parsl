@@ -1,6 +1,7 @@
 import socket
 import pathlib
 import hashlib
+import itertools
 
 from parsl.config import Config
 
@@ -13,6 +14,7 @@ from parsl.monitoring.monitoring import MonitoringHub
 
 
 POLARIS_OPTS = {
+    'hostname': 'polaris',
     'ncpus': 32,
     'scheduler': '#PBS -l filesystems=home:grand:eagle\n#PBS -l place=scatter',
     'launcher': '--depth=64 --ppn 1',
@@ -22,11 +24,12 @@ POLARIS_OPTS = {
 
 
 AURORA_OPTS = {
+    'hostname': 'aurora',
     'ncpus': 208,
     'scheduler': '#PBS -l filesystems=home:flare',
     'launcher': '--ppn 1',
-    'cpu_affinity': 'list:1-8,105-112:9-16,113-120:17-24,121-128:25-32,129-136:33-40,137-144:41-48,145-152:53-60,157-164:61-68,165-172:69-76,173-180:77-84,181-188:85-92,189-196:93-100,197-204',
-    'available_accelerators': [f'{gid}.{tid}' for gid in range(6) for tid in range(2)]
+    'cpu_affinity': 'list:1-2,105-106:3-4,107-108:5-6,109-110:7-8,111-112:9-10,113-114:11-12,115-116:13-14,117-118:15-16,119-120:17-18,121-122:19-20,123-124:21-22,125-126:23-24,127-128:25-26,129-130:27-28,131-132:29-30,133-134:31-32,135-136:33-34,137-138:35-36,139-140:37-38,141-142:39-40,143-144:41-42,145-146:43-44,147-148:45-46,149-150:47-48,151-152:53-54,157-158:55-56,159-160:57-58,161-162:59-60,163-164:61-62,165-166:63-64,167-168:65-66,169-170:67-68,171-172:69-70,173-174:71-72,175-176:73-74,177-178:75-76,179-180:77-78,181-182:79-80,183-184:81-82,185-186:83-84,187-188:85-86,189-190:87-88,191-192:89-90,193-194:91-92,195-196:93-94,197-198:95-96,199-200:97-98,201-202:99-100,203-204',
+    'available_accelerators': list(itertools.chain.from_iterable([[f'{gid}.{tid}'] * 4 for gid in range(6) for tid in range(2)]))
 }
 
 
@@ -52,7 +55,8 @@ def _worker_init(spack_top=None, spack_version='', software='sbndcode', mps: boo
             # use pip with frameworks
             cmds += [
                 'module load frameworks',
-                f'source ~/.venv/{venv_name}/bin/activate'
+                f'source ~/.venv/{venv_name}/bin/activate',
+                'export ZEX_NUMBER_OF_CCS=0:4,1:4,2:4,3:4,4:4,5:4,6:4,7:4,8:4,9:4,10:4,11:4'
             ]
         else:
             raise RuntimeError(f"Don't know how to load virtual environments on machine {hostname}")
@@ -74,9 +78,9 @@ def create_provider_by_hostname(user_opts, system_opts, spack_opts):
         spack_top = spack_opts[0]
         version = spack_opts[1]
         software = spack_opts[2]
-        worker_init = _worker_init(spack_top=spack_top, spack_version=version, software=software, mps=True, venv_name=user_opts.get("worker_venv_name", "sbn"))
+        worker_init = _worker_init(spack_top=spack_top, spack_version=version, software=software, mps=mps, venv_name=user_opts.get("worker_venv_name", "sbn"))
     else:
-        mps = 'polaris' in hostname
+        mps = 'polaris' in system_opts['hostname']
         worker_init = _worker_init(mps=mps, venv_name='sbn')
 
     return PBSProProvider(
@@ -90,7 +94,7 @@ def create_provider_by_hostname(user_opts, system_opts, spack_opts):
         cmd_timeout     = 240,
         scheduler_options = system_opts['scheduler'],
         launcher        = MpiExecLauncher(bind_cmd="--cpu-bind", overrides=system_opts['launcher']),
-        worker_init     = worker_init
+        worker_init     = worker_init + '&&export PATH=/opt/cray/pals/1.4/bin:${PATH}'
     )
 
 def create_executor_by_hostname(user_opts, system_opts, provider):
