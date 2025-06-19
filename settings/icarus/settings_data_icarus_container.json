@@ -1,0 +1,39 @@
+{
+    "run": {
+        "output": "/lus/eagle/projects/neutrinoGPU/twester/icarus_container_preemptable/",
+        "fclpath": "",
+        "nsubruns": 50,
+        "files_per_subrun": 1,
+        "max_futures": 20000,
+        "seed": 1234
+    },
+    "workflow": {
+        "rawdata_path": "/lus/eagle/projects/neutrinoGPU/icarus/data/run2"
+    },
+    "larsoft": {
+        "container": "/lus/grand/projects/neutrinoGPU/software/slf7.sif",
+        "software": "icaruscode",
+        "larsoft_top": "/lus/grand/projects/neutrinoGPU/software/larsoft", 
+        "version": "v10_06_00_01p01",
+        "qual": "e26:prof",
+        "nevts": -1,
+        "experiment": "icarus",
+        "lar_args" : ""
+    },
+    "queue": {
+        "queue": "preemptable",
+        "walltime": "72:00:00",
+        "select_options": "ngpus=32",
+        "cores_per_worker": 1,
+        "nodes_per_block": 1,
+        "init_blocks": 1,
+        "max_blocks": 1,
+        "allocation": "icarusHPC",
+        "retries": 0
+    },
+    "fcls": {
+        "reco1": "stage0_run2_wcdnn_icarus.fcl",
+        "reco2": "stage1_run2_icarus.fcl",
+        "caf": "cafmakerjob_icarus_data.fcl"
+    }
+}

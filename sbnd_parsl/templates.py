@@ -150,3 +150,55 @@ mv *.root $(dirname {{output}}) || true
 {{post_job_hook}}
 {JOB_POST}
 '''
+
+
+CMD_TEMPLATE_CONTAINER = f'''
+{JOB_PRE}
+cd {{workdir}}
+echo "Current directory: "
+pwd
+echo "Current files: "
+ls
+echo "Move fcl."
+
+{{pre_job_hook}}
+echo "Load singularity"
+module use /soft/spack/gcc/0.6.1/install/modulefiles/Core
+module load apptainer
+set -e
+singularity run -B /lus/eagle/ -B /lus/grand/ {{container}} <<EOF
+    echo "Running in: "
+    pwd
+    echo "Sourcing products area"
+    export EXPERIMENT={{experiment}}
+    source {{larsoft_top}}/setup
+    setup {{software}} {{version}} -q {{qual}}
+    echo "Products setup!"
+    # get the fcls
+    {FIND_FCL}
+    fhicl_from_env=$(find_fcl {{fhicl}})
+    if [ -f $fhicl_from_env ]; then
+        cp $fhicl_from_env {{workdir}}/
+    else
+        echo "Could not find fcl! Expect subsequent commands to fail."
+    fi
+    export LOCAL_FCL=$(basename {{fhicl}})
+
+    echo "fhicl_from_env=$fhicl_from_env"
+    echo "LOCAL_FCL=$LOCAL_FCL"
+
+    set -e
+    # Add an optional input file:
+    export lar_cmd="{{cmd}}"
+    echo \$lar_cmd
+    echo "About to run larsoft"
+    eval \$lar_cmd
+    set +e
+EOF
+
+echo "mv *.root $(dirname {{output}}) || true"
+mv *.root $(dirname {{output}}) || true
+
+{{post_job_hook}}
+{JOB_POST}
+'''
