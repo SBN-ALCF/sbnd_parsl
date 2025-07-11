@@ -73,14 +73,13 @@ def _worker_init(spack_top=None, spack_version='', software='sbndcode', mps: boo
 
 
 def create_provider_by_hostname(user_opts, system_opts, spack_opts):
-    hostname = socket.gethostname()
+    mps = 'polaris' in system_opts['hostname']
     if len(spack_opts) >= 2:
         spack_top = spack_opts[0]
         version = spack_opts[1]
         software = spack_opts[2]
         worker_init = _worker_init(spack_top=spack_top, spack_version=version, software=software, mps=mps, venv_name=user_opts.get("worker_venv_name", "sbn"))
     else:
-        mps = 'polaris' in system_opts['hostname']
         worker_init = _worker_init(mps=mps, venv_name='sbn')
 
     return PBSProProvider(

@@ -392,13 +392,15 @@ class WorkflowExecutor:
             for line in f.readlines():
                 yield pathlib.Path(f)
 
-    def execute(self):
+    def execute(self, nworkers: int=-1):
         """
         Run many copies of a single workflow. yield each time a stage is
         executed for efficient task submission, i.e., we'll get the first tasks
         from each workflow first, instead of all the tasks from workflow 0,
         then all the tasks from workflow 1, etc.  Use itertools.cycle() to keep
         looping over all workflows until all tasks are submitted.
+        If nworkers > 0, tasks will be gotten from <nworkers> workflows first
+        before cycling over other workflows
         """
 
         nsubruns = self.run_opts['nsubruns']
@@ -414,9 +416,20 @@ class WorkflowExecutor:
         # task from each subrun at a time. This ensures we get the parsl
         # futures in the "correct" order: Futures without dependencies first,
         # then dependencies later
-        idx_cycle = itertools.cycle(range(nsubruns))
-        wfs = [None for _ in range(nsubruns)]
+
+        wfs = [None] * nsubruns
         skip_idx = set()
+        idx_cycle = itertools.cycle(range(nsubruns))
+
+        # another layer: Instead of cycling over all subruns, cycle in batches
+        # with a batch size = to the number of workers. This ensures the workers
+        # always have tasks to start but also don't have to wait for all subruns
+        # to complete their first stage before moving onto their later stages
+        if nworkers > 0:
+            nworkers = min(nworkers, nsubruns)
+            idx_cycle = itertools.cycle(range(nworkers))
+        else:
+            nworkers = nsubruns
 
         while len(skip_idx) < nsubruns:
             idx = next(idx_cycle)
@@ -447,6 +460,10 @@ class WorkflowExecutor:
                 next(wfs[idx].get_next_task())
             except StopIteration:
                 skip_idx.add(idx)
+                done_workflows = len(skip_idx)
+                if done_workflows % nworkers == 0:
+                    print(done_workflows, min(nsubruns, done_workflows + nworkers))
+                    idx_cycle = itertools.cycle(range(done_workflows, min(nsubruns, done_workflows + nworkers)))
 
                 # let garbage collection happen
                 wfs[idx] = None
