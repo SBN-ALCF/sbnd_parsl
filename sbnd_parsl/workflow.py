@@ -35,7 +35,7 @@ from collections import deque
 import logging
 logger = logging.getLogger(__name__)
 
-from enum import Enum, auto
+from enum import Enum, Flag, auto
 from pathlib import Path
 from typing import List, Dict, Optional, Callable
 
@@ -58,26 +58,56 @@ class StageAncestorException(Exception):
 class NoStageOrderException(Exception):
     pass
 
-class StageType(Enum):
-    GEN = 'gen'
-    G4 = 'g4'
-    DETSIM = 'detsim'
-    RECO1 = 'reco1'
-    RECO2 = 'reco2'
-    DECODE = 'decode'
-    CAF = 'caf'
-    SCRUB = 'scrub'
-    SPINE = 'spine'
-    EMPTY = 'empty'
-    SUPER = 'super'
+
+class StageProperty(Flag):
+    NONE = 0
+    NO_FCL = auto()
+    NO_PARENT = auto()
+    NO_INPUT = auto()
+    _SUPER = auto()
+
+
+class StageType():
+    def __init__(self, name: str, props: Optional[StageProperty]=StageProperty.NONE):
+        self._name = name
+        self._props = props
+
+    @property
+    def properties(self):
+        return self._props
+
+    @property
+    def name(self):
+        return self._name
+
+    def __eq__(self, other):
+        if isinstance(other, StageType):
+            return self._name == other.name
+        return NotImplemented
+
+    def __hash__(self):
+        """Override so StageTypes can be used as dictionary keys."""
+        return hash(self._name)
 
     @staticmethod
-    def from_str(text: str):
-        try:
-            return StageType[text.upper()]
-        except KeyError:
-            logger.warning(f'Warning: Could not convert string {text} to a known stage type. Using generic type.')
-            return StageType.EMPTY
+    def from_str(name: str):
+        """Backwards-compatibility function."""
+        return StageType(name)
+
+
+"""Provide some commonly used StageTypes."""
+GEN = StageType('gen', StageProperty.NO_INPUT | StageProperty.NO_PARENT)
+SPINE = StageType('spine', StageProperty.NO_FCL)
+G4 = StageType('g4')
+DETSIM = StageType('detsim')
+RECO1 = StageType('reco1')
+RECO2 = StageType('reco2')
+DECODE = StageType('decode')
+CAF = StageType('caf')
+SCRUB = StageType('scrub')
+
+# special stage that triggers end-of-workflow actions
+_SUPER = StageType('super', StageProperty._SUPER | StageProperty.NO_FCL)
 
 
 def default_runfunc(stage_self, fcl, input_files, output_dir) -> List[Path]:
@@ -99,8 +129,12 @@ def default_runfunc(stage_self, fcl, input_files, output_dir) -> List[Path]:
 class Stage:
     def __init__(self, stage_type: StageType, fcl: Optional[str]=None,
                  runfunc: Optional[Callable]=None, stage_order: Optional[List[StageType]]=None):
+
         if isinstance(stage_type, str):
             stage_type = StageType.from_str(stage_type)
+        # elif isinstance(stage_type, DefaultStageTypes):
+        #     stage_type = stage_type.value
+
         self._stage_type: StageType = stage_type
         self.fcl = fcl
         self.runfunc = runfunc
@@ -114,6 +148,11 @@ class Stage:
         self._output_files = None
         self._parents_iterators = deque()
         self._combine = False
+
+        # only relevant for _SUPER stage, hold a reference to the last output 
+        # (often Parsl datafuture) of the workflow so that it may be used as
+        # a dummy input to the next workflow
+        self._workflow_last_file = None
 
     @property
     def stage_type(self) -> StageType:
@@ -177,21 +216,19 @@ class Stage:
         if self._output_files is not None and not rerun:
             return
 
-        if self._stage_type == StageType.SUPER:
-            print('Congratulations, you ran all the stages!') 
-            self._complete = True
-            return
-
         # make sure we delete references to the parents once they are run
         if self.has_parents():
             raise RuntimeError(f'Attempt to run stage {self._stage_type} while it still holds references to its parents')
 
+        if StageProperty._SUPER in self._stage_type.properties:
+            print('Congratulations, you ran all the stages!') 
+            self._complete = True
+            return
 
-        if self.fcl is None and self._stage_type != StageType.SPINE:
+        if self.fcl is None and StageProperty.NO_FCL in self._stage_type.properties:
             raise NoFclFileException(f'Attempt to run stage {self._stage_type} with no fcl provided and no default')
 
-        if self._stage_type in [StageType.GEN]:
-            # these stages have no input files, do nothing for now
+        if StageProperty.NO_INPUT in self._stage_type.properties:
             pass
         else:
             if self._input_files is None:
@@ -247,6 +284,9 @@ class Stage:
                 for f in parent.output_files:
                     self.add_input_file(f)
 
+                if StageProperty._SUPER in self.stage_type.properties:
+                    self._workflow_last_file = parent.output_files
+
 
 def run_stage(stage: Stage, fcls: Optional[Dict]=None):
     """Run an individual stage, recursing to parent stages as necessary.
@@ -257,7 +297,7 @@ def run_stage(stage: Stage, fcls: Optional[Dict]=None):
     if stage.complete:
         return
 
-    if stage.fcl is None and stage.stage_type != StageType.SUPER and stage.stage_type != StageType.SPINE:
+    if stage.fcl is None and StageProperty.NO_FCL not in stage.stage_type.properties:
         if not fcls:
             raise NoFclFileException(f"Tried to run a stage with no fcl file. Either set the stage's fcl file first, or pass in a dictionary to run_stage.")
 
@@ -271,7 +311,7 @@ def run_stage(stage: Stage, fcls: Optional[Dict]=None):
         stage.runfunc = default_runfunc
 
     # some stage types should not have any parents
-    if stage.stage_type == StageType.GEN:
+    if StageProperty.NO_PARENT in stage.stage_type.properties:
         stage.run()
         yield
 
@@ -337,10 +377,10 @@ class Workflow:
         self._default_runfunc = runfunc
         if self._default_runfunc is None:
             self._default_runfunc = Workflow.default_runfunc
-        self._stage = Stage(StageType.SUPER)
+        self._stage = Stage(_SUPER)
         self._stage.run_dir = self._run_dir
         self._stage.runfunc = self._default_runfunc
-        self._stage.stage_order = self._stage_order + [StageType.SUPER]
+        self._stage.stage_order = self._stage_order + [_SUPER]
 
     def add_final_stage(self, stage: Stage):
         """Add the final stage to the workflow as a generator expression."""
@@ -357,6 +397,9 @@ class Workflow:
             yield
         except StopIteration:
             pass
+
+    def _get_last_file(self):
+        return self._stage._workflow_last_file
 
 
 class WorkflowExecutor: 
@@ -431,6 +474,8 @@ class WorkflowExecutor:
         else:
             nworkers = nsubruns
 
+        last_files = [None] * nworkers
+
         while len(skip_idx) < nsubruns:
             idx = next(idx_cycle)
             if idx in skip_idx:
@@ -445,7 +490,7 @@ class WorkflowExecutor:
                     if not file_slice:
                         skip_idx.add(idx)
                         continue
-                wfs[idx] = self.setup_single_workflow(idx, file_slice)
+                wfs[idx] = self.setup_single_workflow(idx, file_slice, last_files[idx % nworkers])
 
             # rate-limit the number of concurrent futures to avoid using too
             # much memory on login nodes
@@ -461,6 +506,7 @@ class WorkflowExecutor:
             except StopIteration:
                 skip_idx.add(idx)
                 done_workflows = len(skip_idx)
+                last_files[idx % nworkers] = wfs[idx]._get_last_file()
                 if done_workflows % nworkers == 0:
                     print(done_workflows, min(nsubruns, done_workflows + nworkers))
                     idx_cycle = itertools.cycle(range(done_workflows, min(nsubruns, done_workflows + nworkers)))
