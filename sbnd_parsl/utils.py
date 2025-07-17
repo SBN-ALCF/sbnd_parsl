@@ -23,14 +23,31 @@ POLARIS_OPTS = {
 }
 
 
+def aurora_affinity(per_worker: int=1, ncpus: int=-1):
+    """Return parsl CPU affinity list for aurora, pairing physical & virtual cores and excluding CPUs 0 and 52."""
+    if per_worker < 1:
+        per_worker = 1
+
+    cpus = [i for i in range(1, 104) if i != 52]
+    if ncpus > 0:
+        cpus = cpus[0:ncpus]
+    cpu_groups = [cpus[i:i + per_worker] for i in range(0, len(cpus), per_worker)]
+
+    return 'list:' + ':'.join([
+        ','.join([f'{cpu},{cpu+104}' for cpu in group]) for group in cpu_groups
+    ])
+
+
+
 AURORA_OPTS = {
     'hostname': 'aurora',
     'ncpus': 208,
     'scheduler': '#PBS -l filesystems=home:flare',
     'launcher': '--ppn 1',
-    'cpu_affinity': 'list:1-2,105-106:3-4,107-108:5-6,109-110:7-8,111-112:9-10,113-114:11-12,115-116:13-14,117-118:15-16,119-120:17-18,121-122:19-20,123-124:21-22,125-126:23-24,127-128:25-26,129-130:27-28,131-132:29-30,133-134:31-32,135-136:33-34,137-138:35-36,139-140:37-38,141-142:39-40,143-144:41-42,145-146:43-44,147-148:45-46,149-150:47-48,151-152:53-54,157-158:55-56,159-160:57-58,161-162:59-60,163-164:61-62,165-166:63-64,167-168:65-66,169-170:67-68,171-172:69-70,173-174:71-72,175-176:73-74,177-178:75-76,179-180:77-78,181-182:79-80,183-184:81-82,185-186:83-84,187-188:85-86,189-190:87-88,191-192:89-90,193-194:91-92,195-196:93-94,197-198:95-96,199-200:97-98,201-202:99-100,203-204',
-    'available_accelerators': list(itertools.chain.from_iterable([[f'{gid}.{tid}'] * 4 for gid in range(6) for tid in range(2)]))
+    'cpu_affinity': aurora_affinity(per_worker=1),
+    'available_accelerators': 102
 }
+    # 'available_accelerators': list(itertools.chain.from_iterable([[f'{gid}.{tid}'] * 4 for gid in range(6) for tid in range(2)]))
 
 
 def _worker_init(spack_top=None, spack_version='', software='sbndcode', mps: bool=True, venv_name=None):
