@@ -52,21 +52,22 @@ def runfunc(self, fcl, inputs, run_dir, executor):
         output_dir = run_dir
     else:
         # save this result to filesystem (eagle). Make sure it exists
+        run_dir = pathlib.Path('/tmp') / run_dir.name
         output_dir.mkdir(parents=True, exist_ok=True)
 
     output_file = output_dir / output_filename
     output_file_arg_str = f'--output {str(output_file)}'
-    # mg_cmd = executor.meta.run_cmd(
-    #     output_filename + '.json', os.path.basename(fcl), check_exists=False)
+    mg_cmd = executor.meta.run_cmd(
+        output_filename + '.json', os.path.basename(fcl), check_exists=False)
 
     if self.stage_type == StageType.GEN:
         executor.unique_run_number += 1
         run_number = 1 + (executor.unique_run_number // 100)
         subrun_number = executor.unique_run_number % 100
-        # mg_cmd = '\n'.join([mg_cmd,
-        #     f'echo "source.firstRun: {run_number}" >> {os.path.basename(fcl)}',
-        #     f'echo "source.firstSubRun: {subrun_number}" >> {os.path.basename(fcl)}'
-        # ])
+        mg_cmd = '\n'.join([mg_cmd,
+            f'echo "source.firstRun: {run_number}" >> {os.path.basename(fcl)}',
+            f'echo "source.firstSubRun: {subrun_number}" >> {os.path.basename(fcl)}'
+        ])
     
     input_file_arg_str = ''
     parent_cmd = ''
@@ -119,12 +120,12 @@ class Reco2FromGenExecutor(WorkflowExecutor):
 
         self.unique_run_number = 0
         self.lar_run_counter = 0
-        # self.meta = MetadataGenerator(settings['metadata'], self.fcls, defer_check=True)
+        self.meta = MetadataGenerator(settings.get('metadata', {}), self.fcls, defer_check=True)
         self.stage_order = [StageType.from_str(key) for key in self.fcls.keys()]
         self.subruns_per_caf = settings['workflow']['subruns_per_caf']
         self.name_salt = str(settings['run']['seed']) + str(self.output_dir)
 
-    def setup_single_workflow(self, iteration: int):
+    def setup_single_workflow(self, iteration: int, filelist=None):
         workflow = Workflow(self.stage_order, default_fcls=self.fcls)
         runfunc_ = functools.partial(runfunc, executor=self)
         s = Stage(StageType.CAF)
@@ -146,9 +147,8 @@ class Reco2FromGenExecutor(WorkflowExecutor):
 
 
 def main(settings):
-    user_opts = create_default_useropts()
+    user_opts = create_default_useropts(**settings['queue'])
     user_opts['run_dir'] = str(pathlib.Path(settings['run']['output']) / 'runinfo')
-    user_opts.update(settings['queue'])
     parsl_config = create_parsl_config(user_opts, [settings['larsoft']['spack_top'], settings['larsoft']['version'], settings['larsoft']['software']])
     print(parsl_config)
     parsl.clear()

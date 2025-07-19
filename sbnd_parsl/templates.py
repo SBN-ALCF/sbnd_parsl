@@ -47,6 +47,21 @@ function find_fcl() {{
 }}
 '''
 
+FIND_FCL_CONTAINER = r'''
+echo "Defining fcl lookup function"
+echo "FHICL_FILE_PATH=\$FHICL_FILE_PATH"
+function find_fcl() {{
+    if [ "\$1" != "\${{1#/}}" ]; then
+        # absolute path
+        echo \$1 
+        return 0
+    fi
+
+    # relative path or filename -- look up in FHICL_FILE_PATH
+    echo \$(IFS=:; find \$FHICL_FILE_PATH -name \$(basename "\${{1}}") | head -n 1)
+}}
+'''
+
 
 # this template additionally loads sbndata and expects "input" in the form of "-s file1 -s file2 ..."
 SPINE_TEMPLATE = f'''
@@ -163,29 +178,31 @@ echo "Move fcl."
 
 {{pre_job_hook}}
 echo "Load singularity"
-module use /soft/spack/gcc/0.6.1/install/modulefiles/Core
+# module use /soft/spack/gcc/0.6.1/install/modulefiles/Core
 module load apptainer
+module load fuse-overlayfs
 set -e
-singularity run -B /lus/eagle/ -B /lus/grand/ {{container}} <<EOF
+singularity run -B /lus/flare/ {{container}} <<EOF
     echo "Running in: "
     pwd
     echo "Sourcing products area"
     export EXPERIMENT={{experiment}}
     source {{larsoft_top}}/setup
     setup {{software}} {{version}} -q {{qual}}
+    export PATH=/lus/flare/projects/neutrinoGPU/scisoft/larsoft/gcc/v12_1_0/Linux64bit+3.10-2.17/libexec/gcc/x86_64-pc-linux-gnu/12.1.0:\$PATH
     echo "Products setup!"
     # get the fcls
-    {FIND_FCL}
-    fhicl_from_env=$(find_fcl {{fhicl}})
-    if [ -f $fhicl_from_env ]; then
-        cp $fhicl_from_env {{workdir}}/
+    {FIND_FCL_CONTAINER}
+    fhicl_from_env=\$(find_fcl {{fhicl}})
+    if [ -f \$fhicl_from_env ]; then
+        cp \$fhicl_from_env {{workdir}}/
     else
         echo "Could not find fcl! Expect subsequent commands to fail."
     fi
-    export LOCAL_FCL=$(basename {{fhicl}})
+    export LOCAL_FCL=\$(basename {{fhicl}})
 
-    echo "fhicl_from_env=$fhicl_from_env"
-    echo "LOCAL_FCL=$LOCAL_FCL"
+    echo "fhicl_from_env=\$fhicl_from_env"
+    echo "LOCAL_FCL=\$LOCAL_FCL"
 
     set -e
     # Add an optional input file:
