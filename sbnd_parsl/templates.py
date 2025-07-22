@@ -176,13 +176,12 @@ echo "Current files: "
 ls
 echo "Move fcl."
 
-{{pre_job_hook}}
 echo "Load singularity"
-# module use /soft/spack/gcc/0.6.1/install/modulefiles/Core
+module use /soft/spack/gcc/0.6.1/install/modulefiles/Core
 module load apptainer
-module load fuse-overlayfs
+# module load fuse-overlayfs
 set -e
-singularity run -B /lus/flare/ {{container}} <<EOF
+singularity run -B /lus/grand/ -B /lus/eagle/ {{container}} <<EOF
     echo "Running in: "
     pwd
     echo "Sourcing products area"
@@ -200,6 +199,7 @@ singularity run -B /lus/flare/ {{container}} <<EOF
         echo "Could not find fcl! Expect subsequent commands to fail."
     fi
     export LOCAL_FCL=\$(basename {{fhicl}})
+    {{pre_job_hook}}
 
     echo "fhicl_from_env=\$fhicl_from_env"
     echo "LOCAL_FCL=\$LOCAL_FCL"
@@ -215,6 +215,9 @@ EOF
 
 echo "mv *.root $(dirname {{output}}) || true"
 mv *.root $(dirname {{output}}) || true
+
+echo "mv *.json $(dirname {{output}}) || true"
+mv *.json $(dirname {{output}}) || true
 
 {{post_job_hook}}
 {JOB_POST}
