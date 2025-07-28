@@ -39,9 +39,6 @@ from enum import Enum, Flag, auto
 from pathlib import Path
 from typing import List, Dict, Optional, Callable
 
-import parsl
-from sbnd_parsl.utils import create_default_useropts, create_parsl_config
-
 
 class NoInputFileException(Exception):
     pass
@@ -430,6 +427,7 @@ class WorkflowExecutor:
         self.workflow_opts = settings['workflow']
         self.workflow = None
 
+
     def file_generator(self):
         with open(self.run_opts['file_list'], 'r') as f:
             for line in f.readlines():
@@ -506,7 +504,7 @@ class WorkflowExecutor:
             except StopIteration:
                 skip_idx.add(idx)
                 done_workflows = len(skip_idx)
-                last_files[idx % nworkers] = wfs[idx]._get_last_file()
+                # last_files[idx % nworkers] = wfs[idx]._get_last_file()
                 if done_workflows % nworkers == 0:
                     print(done_workflows, min(nsubruns, done_workflows + nworkers))
                     idx_cycle = itertools.cycle(range(done_workflows, min(nsubruns, done_workflows + nworkers)))
@@ -526,6 +524,7 @@ class WorkflowExecutor:
         def check_future_status(f):
             if not f.done():
                 return True
+
             try:
                 print(f'[SUCCESS] task {f.tid} {f.filepath} {f.result()}')
             except Exception as e:
