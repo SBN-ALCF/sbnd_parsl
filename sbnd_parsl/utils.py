@@ -61,7 +61,7 @@ def _worker_init(spack_top=None, spack_version='', software='sbndcode', mps: boo
         ]
     if venv_name:
         hostname = socket.gethostname()
-        if 'polaris' in hostname:
+        if 'polaris' in hostname or hostname.startswith('x3'):
             # use conda
             cmds += [
                 'module use /soft/modulefiles',
@@ -89,7 +89,7 @@ def _worker_init(spack_top=None, spack_version='', software='sbndcode', mps: boo
     return '&&'.join(cmds)
 
 
-def create_provider_by_hostname(user_opts, system_opts, spack_opts):
+def create_provider_by_hostname(user_opts, system_opts, spack_opts, local: bool=False):
     mps = 'polaris' in system_opts['hostname']
     if len(spack_opts) >= 2:
         spack_top = spack_opts[0]
@@ -99,6 +99,17 @@ def create_provider_by_hostname(user_opts, system_opts, spack_opts):
     else:
         worker_init = _worker_init(mps=mps, venv_name='sbn')
 
+    if local:
+        # user has allocated the job. Just launch
+        return LocalProvider(
+            nodes_per_block = user_opts.get("nodes_per_block", 1),
+            init_blocks     = user_opts.get("init_blocks", 1),
+            max_blocks      = user_opts.get("max_blocks", 1),
+            launcher        = MpiExecLauncher(bind_cmd="--cpu-bind", overrides=system_opts['launcher']),
+            worker_init     = worker_init + '&&export PATH=/opt/cray/pals/1.4/bin:${PATH}'
+        )
+
+    # let parsl allocate the job
     return PBSProProvider(
         account         = user_opts["allocation"],
         queue           = user_opts.get("queue", "debug"),
@@ -112,6 +123,8 @@ def create_provider_by_hostname(user_opts, system_opts, spack_opts):
         launcher        = MpiExecLauncher(bind_cmd="--cpu-bind", overrides=system_opts['launcher']),
         worker_init     = worker_init + '&&export PATH=/opt/cray/pals/1.4/bin:${PATH}'
     )
+
+
 
 def create_executor_by_hostname(user_opts, system_opts, provider):
     from parsl import HighThroughputExecutor
@@ -161,15 +174,15 @@ def create_default_useropts(**kwargs):
     return user_opts
 
 
-def create_parsl_config(user_opts, spack_opts=[]):
+def create_parsl_config(user_opts, spack_opts=[], local: bool=False):
     hostname = socket.gethostname()
     system_opts = None
-    if 'polaris' in hostname:
+    if 'polaris' in hostname or hostname.startswith('x3'):
         system_opts = POLARIS_OPTS
     elif 'aurora' in hostname:
         system_opts = AURORA_OPTS
 
-    provider = create_provider_by_hostname(user_opts, system_opts, spack_opts)
+    provider = create_provider_by_hostname(user_opts, system_opts, spack_opts, local)
     executor = create_executor_by_hostname(user_opts, system_opts, provider)
     checkpoints = get_all_checkpoints(user_opts["run_dir"])
     config = Config(
@@ -180,11 +193,11 @@ def create_parsl_config(user_opts, spack_opts=[]):
             strategy=user_opts.get("strategy", "none"),
             retries=user_opts.get("retries", 5),
             app_cache=True,
-            monitoring=MonitoringHub(
-                hub_address=address_by_interface('bond0'),
-                monitoring_debug=False,
-                resource_monitoring_interval=10,
-            ),
+            # monitoring=MonitoringHub(
+            #     hub_address=address_by_interface('bond0'),
+            #     monitoring_debug=False,
+            #     resource_monitoring_interval=10,
+            # ),
     )
 
     return config
