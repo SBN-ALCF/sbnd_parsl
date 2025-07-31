@@ -222,8 +222,8 @@ class Stage:
             self._complete = True
             return
 
-        if self.fcl is None and StageProperty.NO_FCL in self._stage_type.properties:
-            raise NoFclFileException(f'Attempt to run stage {self._stage_type} with no fcl provided and no default')
+        if self.fcl is None and StageProperty.NO_FCL not in self._stage_type.properties:
+            raise NoFclFileException(f'Attempt to run stage {self._stage_type.name} with no fcl provided and no default')
 
         if StageProperty.NO_INPUT in self._stage_type.properties:
             pass

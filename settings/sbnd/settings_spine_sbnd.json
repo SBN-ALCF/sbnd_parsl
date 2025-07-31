@@ -1,35 +1,39 @@
 {
     "run": {
-        "output": "/lus/eagle/projects/neutrinoGPU/twester/spine_validation_data",
-        "nsubruns": 200,
-        "max_futures": 20000
+        "output": "/lus/eagle/projects/neutrinoGPU/twester/spine_marchprod_test2",
+        "nsubruns": 1,
+        "max_futures": 20000,
+        "files_per_subrun": 16
     },
     "workflow": {
-        "files_per_subrun": 16,
         "cores_per_worker": 8,
-        "larcv_path": "/lus/eagle/projects/neutrinoGPU/sbnd/data/larcv"
+        "larcv_path": "/lus/eagle/projects/neutrinoGPU/sbnd/mc/larcv/mc_MCP2025B_5e18_prodcorsika_proton_intime_sbnd_CV_gen_g4_detsim_reco1_larcv_sbnd/",
+        "filelist": ""
     },
     "spine": {
-        "exe": "/lus/grand/projects/neutrinoGPU/software/spine_develop/bin/run.py",
-        "container": "/lus/grand/projects/neutrinoGPU/software/spine_develop/larcv2_ub2204-cuda121-torch251-larndsim.sif",
+        "exe": "/lus/grand/projects/neutrinoGPU/software/spine/bin/run.py",
+        "container": "/lus/grand/projects/neutrinoGPU/software/containers/larcv2_ub2204-cuda121-torch251-larndsim-2025-03-20.sif",
         "opt0finder": "/lus/grand/projects/neutrinoGPU/software/OpT0Finder",
-        "config": "/lus/grand/projects/neutrinoGPU/software/spine_prod/config/sbnd/sbnd_full_chain_data_250328.cfg",
-        "weights": "/lus/eagle/projects/neutrinoGPU/bearc/spine_weights/mpvmpr_v02/weights/full_chain/grappa_inter/default/snapshot-4999.ckpt",
-        "version": "v0.4.0"
+        "config": "/lus/grand/projects/neutrinoGPU/software/spine_prod/config/sbnd/sbnd_full_chain_250328.cfg",
+        "litify": "/lus/grand/projects/neutrinoGPU/software/spine_prod/config/generic/litify.cfg",
+        "weights": "/lus/grand/projects/neutrinoGPU/spine_weights/snapshot-6499.ckpt",
+        "version": "v0.5.1"
     },
     "queue": {
         "queue": "debug",
         "walltime": "01:00:00",
         "select_options": "ngpus=32",
         "nodes_per_block": 1,
+        "cpus_per_node": 32,
         "init_blocks": 1,
         "max_blocks": 1,
-        "allocation": "neutrinoGPU",
-        "retries": 5
+        "allocation": "14453",
+        "retries": 3
     },
+    "fcls": {},
     "metadata": {
         "production.name": "PolarisTest",
         "production.type": "polaris",
-        "sbnd_project.name": "MCP2025Av3_DevSample_bnblight_v10_04_06_01_spine"
+        "sbnd_project.name": "mc_MCP2025B_5e18_prodcorsika_proton_intime_sbnd_CV_spine"
     }
 }

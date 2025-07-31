@@ -203,10 +203,10 @@ def create_parsl_config(user_opts, spack_opts=[], local: bool=False):
     return config
 
 
-def hash_name(string: str) -> str:
+def hash_name(string: str, maxlen=16, sep="-") -> str:
     """Create something that looks like abcd-abcd-abcd-abcd from a string."""
-    strhash = hashlib.shake_128(bytes(string, encoding='utf8')).hexdigest(16)
-    return '-'.join(strhash[i*4:i*4+4] for i in range(4))
+    strhash = hashlib.sha256(string.encode('utf-8')).hexdigest()[:max(maxlen, 2)]
+    return sep.join(strhash[i*4:i*4+4] for i in range(4))
 
 
 def subrun_dir(prefix: pathlib.Path, subrun: int, step: int=2, depth: int=2, width: int=6):

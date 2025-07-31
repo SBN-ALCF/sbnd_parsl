@@ -92,6 +92,10 @@ echo "Config: $TMP_CFG"
 
 {NVIDIA_BEST_CUDA}
 
+# litify: Run on all output files
+LITIFY_LIST=$(dirname {{input}})/litify_list.txt
+sed "s|.*/\(.*\)\.root$|\\1_spine\.h5|g" {{input}} > $LITIFY_LIST
+
 singularity run -B /lus/eagle/ -B /lus/grand/ --nv {{container}} <<EOL
     echo "Running in: "
     pwd
@@ -104,8 +108,16 @@ singularity run -B /lus/eagle/ -B /lus/grand/ --nv {{container}} <<EOL
         echo \$FMATCH_LIBDIR
     fi
     python {{exe}} -c $TMP_CFG -S {{input}}
+    if [ "{{litify}}x" != "x" ]; then
+        echo "running litify"
+        python {{exe}} -c {{litify}} -S $LITIFY_LIST
+    fi
 EOL
 echo "moving files"
+if [ "{{litify}}x" != "x" ]; then
+    echo "Using lite files"
+    rename "_spine_spine.h5" "_spine.h5" *_spine_spine.h5
+fi
 mv *.h5 $(dirname {{output}}) || true
 {{post_job_hook}}
 {JOB_POST}
