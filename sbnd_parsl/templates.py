@@ -107,11 +107,13 @@ singularity run -B /lus/eagle/ -B /lus/grand/ --nv {{container}} <<EOL
         echo \$FMATCH_BASEDIR
         echo \$FMATCH_LIBDIR
     fi
-    python {{exe}} -c $TMP_CFG -S {{input}}
-    if [ "{{litify}}x" != "x" ]; then
-        echo "running litify"
-        python {{exe}} -c {{litify}} -S $LITIFY_LIST
-    fi
+    python {{exe}} -c $TMP_CFG -S {{input}} &&
+    {{{{
+        if [ "{{litify}}x" != "x" ]; then
+            echo "running litify"
+            python {{exe}} -c {{litify}} -S $LITIFY_LIST
+        fi
+    }}}}
 EOL
 echo "moving files"
 if [ "{{litify}}x" != "x" ]; then
