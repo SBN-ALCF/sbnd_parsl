@@ -79,29 +79,42 @@ class StageType():
 
     def __eq__(self, other):
         if isinstance(other, StageType):
-            return self._name == other.name
+            return self._name == other.name and self._props == other.properties
         return NotImplemented
 
     def __hash__(self):
         """Override so StageTypes can be used as dictionary keys."""
         return hash(self._name)
 
+
+class DefaultStageTypes:
+    """Provide some commonly used StageTypes."""
+    GEN = StageType('gen', StageProperty.NO_INPUT | StageProperty.NO_PARENT)
+    SPINE = StageType('spine', StageProperty.NO_FCL)
+    G4 = StageType('g4')
+    DETSIM = StageType('detsim')
+    RECO1 = StageType('reco1')
+    RECO2 = StageType('reco2')
+    DECODE = StageType('decode')
+    CAF = StageType('caf')
+    SCRUB = StageType('scrub')
+
     @staticmethod
-    def from_str(name: str):
-        """Backwards-compatibility function."""
-        return StageType(name)
+    def from_str(name: str) -> 'StageType':
+        """Return the StageType instance with the given name, or raise ValueError."""
+        try:
+            return getattr(DefaultStageTypes, name.upper())
+        except AttributeError:
+            raise ValueError(
+                f"StageType '{name}' not found in DefaultStageTypes. "
+                f"Available: {DefaultStageTypes._member_names()}"
+            )
 
+    @staticmethod
+    def _member_names():
+        return [k for k, v in DefaultStageTypes.__dict__.items() \
+                if not k.startswith('_') and isinstance(v, StageType)]
 
-"""Provide some commonly used StageTypes."""
-GEN = StageType('gen', StageProperty.NO_INPUT | StageProperty.NO_PARENT)
-SPINE = StageType('spine', StageProperty.NO_FCL)
-G4 = StageType('g4')
-DETSIM = StageType('detsim')
-RECO1 = StageType('reco1')
-RECO2 = StageType('reco2')
-DECODE = StageType('decode')
-CAF = StageType('caf')
-SCRUB = StageType('scrub')
 
 # special stage that triggers end-of-workflow actions
 _SUPER = StageType('super', StageProperty._SUPER | StageProperty.NO_FCL)
@@ -128,7 +141,7 @@ class Stage:
                  runfunc: Optional[Callable]=None, stage_order: Optional[List[StageType]]=None):
 
         if isinstance(stage_type, str):
-            stage_type = StageType.from_str(stage_type)
+            stage_type = DefaultStageTypes.from_str(stage_type)
         # elif isinstance(stage_type, DefaultStageTypes):
         #     stage_type = stage_type.value
 
@@ -170,7 +183,7 @@ class Stage:
     def parent_type(self) -> Optional[StageType]:
         """Return the stage type of the stage before this one."""
         if self.stage_order is None:
-            raise NoStageOrderException(f'No stage order set for stage of type {self.stage_type}. Either add this stage to a Workflow or set stage_order at initialization.')
+            raise NoStageOrderException(f'No stage order set for stage of type {self.stage_type.name}. Either add this stage to a Workflow or set stage_order at initialization.')
 
         idx = self.stage_order.index(self.stage_type)
         if idx == 0:
@@ -191,6 +204,17 @@ class Stage:
     @property
     def complete(self) -> bool:
         return self._complete
+
+    '''
+    def check_complete(self, iteration: int) -> bool:
+        """Manually check if this stage is complete based on an iteration number."""
+        func = MethodType(self.outfunc, self)
+        output_files = func(iteration)
+        if output_filename.is_file():
+            self._complete = True
+            self._output_files = output_files
+        return self.complete
+    '''
 
     def add_input_file(self, file) -> None:
         if self._input_files is None:
@@ -301,7 +325,7 @@ def run_stage(stage: Stage, fcls: Optional[Dict]=None):
         try:
             stage.fcl = fcls[stage.stage_type]
         except KeyError:
-            stage.fcl = fcls[stage.stage_type.value]
+            stage.fcl = fcls[stage.stage_type.name]
 
     if stage.runfunc is None:
         logger.warning(f'No runfunc specified for stage with type {stage.stage_type}. Adding default runfunc')
@@ -366,7 +390,7 @@ class Workflow:
         if default_fcls is not None:
             for k, v in default_fcls.items():
                 if not isinstance(k, StageType):
-                    self.default_fcls[StageType.from_str(k)] = v
+                    self.default_fcls[DefaultStageTypes.from_str(k)] = v
                 else:
                     self.default_fcls[k] = v
 
@@ -382,6 +406,27 @@ class Workflow:
     def add_final_stage(self, stage: Stage):
         """Add the final stage to the workflow as a generator expression."""
         self._stage.add_parents(stage, self.default_fcls)
+
+    '''
+    def _resolve(self, stage=None, iteration):
+        """
+        Mark stages complete based on iteration number.
+        While it is optimal for first-time runs to begin by running the stages
+        with no dependencies, it becomes sub-optimal to re-run those stages if
+        re-running the workflow from a  mostly complete state. This function
+        marks stages with dependencies as complete if the "check_complete"
+        function finds the correct output, e.g., a file with the expected name,
+        therefore skipping submission of the earlier stages. If the user knows
+        the workflow is a first-time run, this method should not be called.
+        Otherwise it could save some time.
+        """
+        if stage is None:
+            stage = self._stage
+
+        for p in stage.parents():
+            if not p.check_complete(iteration):
+                self._resolve(p, iteration)
+    '''
 
     def get_next_task(self):
         """
@@ -426,6 +471,9 @@ class WorkflowExecutor:
         # workflow
         self.workflow_opts = settings['workflow']
         self.workflow = None
+
+        # track the number of submitted stages
+        self._stage_counter = 0
 
 
     def file_generator(self):
@@ -521,6 +569,7 @@ class WorkflowExecutor:
 
     def get_task_results(self):
         """Loop over all tasks & clear finished ones."""
+        '''
         def check_future_status(f):
             if not f.done():
                 return True
@@ -532,6 +581,24 @@ class WorkflowExecutor:
             return False
 
         self.futures = list(filter(check_future_status, self.futures))
+        '''
+
+        remaining_futures = []
+        npass = 0
+        nfail = 0
+        for f in self.futures:
+            if not f.done():
+                remaining_futures.append(f)
+                continue
+            try:
+                f.result()
+                npass += 1
+            except Exception as e:
+                print(f'[FAILED] task {f.tid} {f.filepath}')
+                nfail += 1
+        print(f'Futures [SUCCESS]/[FAILED]: {npass}/{nfail}')
+        self.futures = remaining_futures
+
 
 
     def setup_single_workflow(self, iteration: int, inputs=None):
