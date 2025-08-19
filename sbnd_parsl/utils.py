@@ -68,7 +68,7 @@ def _worker_init(spack_top=None, spack_version='', software='sbndcode', mps: boo
                 'module load conda',
                 f'conda activate {venv_name}'
             ]
-        elif 'aurora' in hostname:
+        elif 'aurora' in hostname or hostname.startswith('x4'):
             # use pip with frameworks
             cmds += [
                 'module load frameworks',
@@ -179,7 +179,7 @@ def create_parsl_config(user_opts, spack_opts=[], local: bool=False):
     system_opts = None
     if 'polaris' in hostname or hostname.startswith('x3'):
         system_opts = POLARIS_OPTS
-    elif 'aurora' in hostname:
+    elif 'aurora' in hostname or hostname.startswith('x4'):
         system_opts = AURORA_OPTS
 
     provider = create_provider_by_hostname(user_opts, system_opts, spack_opts, local)

@@ -30,6 +30,19 @@ echo GPU Selected
 echo $CUDA_VISIBLE_DEVICES
 '''
 
+CONTAINER_INIT = r'''
+host=$(hostname -d | sed 's/.*\.\(.*\)\.alcf\.anl\.gov/\1/g')
+if [ $host -eq "polaris" ]; then
+    export MNT_ARG="-B /lus/grand -B /lus/eagle"
+    module use /soft/spack/gcc/0.6.1/install/modulefiles/Core
+fi
+module load apptainer
+if [ $host -eq "aurora" ]; then
+    export MNT_ARG="-B /lus/flare"
+    module load fuse-overlayfs
+fi
+'''
+
 
 # define a function so the job can find the full path to fcl by name
 FIND_FCL = r'''
@@ -191,11 +204,9 @@ ls
 echo "Move fcl."
 
 echo "Load singularity"
-module use /soft/spack/gcc/0.6.1/install/modulefiles/Core
-module load apptainer
-# module load fuse-overlayfs
+{CONTAINER_INIT}
 set -e
-singularity run -B /lus/grand/ -B /lus/eagle/ {{container}} <<EOF
+singularity run $MNT_ARG {{container}} <<EOF
     echo "Running in: "
     pwd
     echo "Sourcing products area"
