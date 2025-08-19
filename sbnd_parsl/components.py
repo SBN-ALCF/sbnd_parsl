@@ -31,7 +31,7 @@ def fcl_future(workdir, stdout, stderr, template, cmd, larsoft_opts, inputs=[], 
 
 
 
-def mc_runfunc(self, fcl, inputs, run_dir, template, meta, executor, label='', nskip=0, last_file=None):
+def mc_runfunc(self, fcl, inputs, run_dir, template, meta, executor, label='', last_file=None):
     """
     Method bound to each Stage object and run during workflow execution. Use
     this runfunc for generating MC events.
@@ -40,7 +40,6 @@ def mc_runfunc(self, fcl, inputs, run_dir, template, meta, executor, label='', n
      - Metadata injection
      - Combined stages: Forward command to the next stage, so both stages run in 1 task
      - wait for last_file (even if no dependency)
-     - skip events
     """
 
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -95,7 +94,7 @@ def mc_runfunc(self, fcl, inputs, run_dir, template, meta, executor, label='', n
     nevts = -1
     if self.stage_type == DefaultStageTypes.GEN:
         nevts = executor.larsoft_opts["nevts"]
-    cmd = f'mkdir -p {run_dir} && cd {run_dir} && lar -c {fcl} {input_file_arg_str} {output_file_arg_str} --nevts={nevts} --nskip={nskip}'
+    cmd = f'mkdir -p {run_dir} && cd {run_dir} && lar -c {fcl} {input_file_arg_str} {output_file_arg_str} --nevts={nevts}'
 
     if parent_cmd != '':
         cmd = ' && '.join([parent_cmd, cmd])
