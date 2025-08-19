@@ -31,17 +31,18 @@ class Reco2FromGenExecutor(WorkflowExecutor):
         self.unique_run_number = 0
         self.lar_run_counter = 0
         self.meta = MetadataGenerator(settings['metadata'], self.fcls, defer_check=True)
-        self.stage_order = [GEN, G4, DETSIM, RECO1, RECO2, CAF]
+        self.stage_order = [DefaultStageTypes.from_str(key) for key in self.fcls.keys()]
         self.subruns_per_caf = settings['workflow']['subruns_per_caf']
         self.name_salt = str(settings['run']['seed']) + str(self.output_dir)
         self.runfunc = functools.partial(mc_runfunc, executor=self, 
                                          template=CMD_TEMPLATE_CONTAINER,
                                          meta=self.meta)
 
-    def setup_single_workflow(self, iteration: int, file_slice=None):
+    def setup_single_workflow(self, iteration: int, file_slice=None, last_file=None):
         workflow = Workflow(self.stage_order, default_fcls=self.fcls)
         runfunc_ = self.runfunc
-        s = Stage(StageType.CAF)
+        s = Stage(DefaultStageTypes.CAF)
+        s.runfunc = self.runfunc
         workflow.add_final_stage(s)
         s.run_dir = get_caf_dir(self.output_dir, iteration)
 

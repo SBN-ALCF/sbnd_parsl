@@ -54,8 +54,11 @@ def mc_runfunc(self, fcl, inputs, run_dir, template, meta, executor, label='', l
 
     if self.stage_type != DefaultStageTypes.CAF:
         # from string or posixpath input
+        if label != '':
+            label = label + '-'
+
         output_filename = ''.join([
-            str(self.stage_type.name), '-', label, '-',
+            str(self.stage_type.name), '-', label,
             hash_name(os.path.basename(fcl) + executor.name_salt + str(executor.lar_run_counter)),
             ".root"
         ])
