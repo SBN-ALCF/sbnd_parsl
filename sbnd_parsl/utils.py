@@ -64,6 +64,7 @@ def _worker_init(spack_top=None, spack_version='', software='sbndcode', mps: boo
         if 'polaris' in hostname or hostname.startswith('x3'):
             # use conda
             cmds += [
+                'export TMPDIR=/tmp/',
                 'module use /soft/modulefiles',
                 'module load conda',
                 f'conda activate {venv_name}'
