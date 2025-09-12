@@ -193,6 +193,7 @@ def create_parsl_config(user_opts, spack_opts=[], local: bool=False):
             strategy=user_opts.get("strategy", "none"),
             retries=user_opts.get("retries", 5),
             app_cache=True,
+            initialize_logging=False,
             # monitoring=MonitoringHub(
             #     hub_address=address_by_interface('bond0'),
             #     monitoring_debug=False,
