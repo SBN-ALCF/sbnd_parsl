@@ -91,10 +91,14 @@ class DefaultStageTypes:
     """Provide some commonly used StageTypes."""
     GEN = StageType('gen', StageProperty.NO_INPUT | StageProperty.NO_PARENT)
     SPINE = StageType('spine', StageProperty.NO_FCL)
+
+    # these are just common stage names, no special properties
     G4 = StageType('g4')
     DETSIM = StageType('detsim')
     RECO1 = StageType('reco1')
     RECO2 = StageType('reco2')
+    STAGE0 = StageType('stage0')
+    STAGE1 = StageType('stage1')
     DECODE = StageType('decode')
     CAF = StageType('caf')
     SCRUB = StageType('scrub')
@@ -554,7 +558,6 @@ class WorkflowExecutor:
                 done_workflows = len(skip_idx)
                 # last_files[idx % nworkers] = wfs[idx]._get_last_file()
                 if done_workflows % nworkers == 0:
-                    print(done_workflows, min(nsubruns, done_workflows + nworkers))
                     idx_cycle = itertools.cycle(range(done_workflows, min(nsubruns, done_workflows + nworkers)))
 
                 # let garbage collection happen

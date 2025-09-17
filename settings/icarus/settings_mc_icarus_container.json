@@ -1,0 +1,55 @@
+{
+    "run": {
+        "output": "/lus/eagle/projects/neutrinoGPU/twester/icarus_run2_mc_test",
+        "fclpath": "",
+        "nsubruns": 1,
+        "files_per_subrun": 1,
+        "max_futures": 20000,
+        "seed": 1234
+    },
+    "workflow": {
+        "rawdata_path": "/lus/eagle/projects/neutrinoGPU/icarus/data/run2_validation"
+    },
+    "larsoft": {
+        "container": "/lus/grand/projects/neutrinoGPU/software/slf7.sif",
+        "software": "icaruscode",
+        "larsoft_top": "/lus/grand/projects/neutrinoGPU/software/larsoft", 
+        "version": "v10_06_00_04p04",
+        "qual": "e26:prof",
+        "nevts": -1,
+        "experiment": "icarus",
+        "lar_args" : ""
+    },
+    "queue": {
+        "queue": "debug",
+        "walltime": "1:00:00",
+        "select_options": "ngpus=32",
+        "cores_per_worker": 1,
+        "cpus_per_node": 32,
+        "nodes_per_block": 1,
+        "init_blocks": 2,
+        "min_blocks": 0,
+        "max_blocks": 2,
+        "allocation": "14453",
+        "retries": 1
+    },
+    "fcls": {
+        "decode": "decoder_run2_icarus.fcl",
+        "overlay": "simulation_genie_icarus_bnb_overlays_volDetEnclosure_fiducial.fcl",
+        "g4": "larg4_icarus_cosmics_sce.fcl",
+        "detsim": "detsim_2d_icarus_refactored_yzsim_overlay.fcl",
+        "overlay_wfm": "overlay_waveforms.fcl",
+        "stage0": "stage0_run2_wcdnn_icarus_overlay.fcl",
+        "stage1": "stage1_run2_icarus_overlay.fcl",
+        "caf": "cafmakerjob_icarus_detsim2d_systtools_and_fluxwgt_overlay.fcl"
+    },
+    "metadata": {
+        "exe": "/lus/grand/projects/neutrinoGPU/software/sbnpoms_metadata_injector_data.sh",
+        "mdprojectsoftware": "icaruscode",
+        "mdproductionname": "Spring2025",
+        "mdappversion": "v10_06_00_04p04",
+        "mdprojectversion": "v10_06_00_04p04",
+        "mdgroupname": "icarus",
+        "mdfiletype": "data"
+    }
+}
