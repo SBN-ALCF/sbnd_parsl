@@ -31,6 +31,7 @@ class Reco2FromGenExecutor(WorkflowExecutor):
         self.unique_run_number = 0
         self.lar_run_counter = 0
         self.name_salt = str(settings['run']['seed']) + str(self.output_dir)
+        self.detsim_path = pathlib.PosixPath(settings['workflow']['detsim_path'])
 
         self.default_fcls = self.fcls['cv']
         self.variations = [key for key in self.fcls.keys() if key != 'cv']
@@ -50,8 +51,10 @@ class Reco2FromGenExecutor(WorkflowExecutor):
         self.subruns_per_caf = settings['workflow']['subruns_per_caf']
 
         # the default (CV) stage order
-        self.stage_order = [DefaultStageTypes.GEN, DefaultStageTypes.G4, DefaultStageTypes.DETSIM, \
-                            DefaultStageTypes.RECO1, DefaultStageTypes.RECO2, DefaultStageTypes.CAF]
+        # self.stage_order = [DefaultStageTypes.GEN, DefaultStageTypes.G4, DefaultStageTypes.DETSIM, \
+        #                     DefaultStageTypes.RECO1, DefaultStageTypes.RECO2, DefaultStageTypes.CAF]
+        # this is the stage order for adding new variations on existing detsim files
+        self.stage_order = [DefaultStageTypes.DETSIM, DefaultStageTypes.RECO1, DefaultStageTypes.RECO2, DefaultStageTypes.CAF]
 
         # when we construct the scrub stage, this will let the workflow know to
         # treat a detsim stage as the parent of scrub, instead of a fixed input file
@@ -70,6 +73,12 @@ class Reco2FromGenExecutor(WorkflowExecutor):
                         for key in self.fcls.keys()
         }
 
+    def file_generator(self):
+        path_generators = [self.detsim_path.rglob('detsim*.root')]
+        generator = itertools.chain(*path_generators)
+        for f in generator:
+            yield f
+
     def setup_single_workflow(self, iteration: int, input_files=None, last_file=None):
         cv_dir = self.output_dir / 'cv'
 
@@ -79,10 +88,10 @@ class Reco2FromGenExecutor(WorkflowExecutor):
             var_dirs[var] = self.output_dir / var
 
         workflow = Workflow(self.stage_order, default_fcls=self.default_fcls)
-        s = Stage(DefaultStageTypes.CAF)
-        s.run_dir = get_caf_dir(cv_dir, iteration)
-        s.runfunc = self.runfuncs['cv']
-        workflow.add_final_stage(s)
+        # s = Stage(DefaultStageTypes.CAF)
+        # s.run_dir = get_caf_dir(cv_dir, iteration)
+        # s.runfunc = self.runfuncs['cv']
+        # workflow.add_final_stage(s)
 
         # CAF for each variation
         var_caf_stages = {}
@@ -97,20 +106,21 @@ class Reco2FromGenExecutor(WorkflowExecutor):
             inst = iteration * self.subruns_per_caf + i
             # create reco2 file from MC, only need to specify the last stage
             # since there are no inputs
-            scv_reco2 = Stage(DefaultStageTypes.RECO2)
-            scv_reco2.run_dir = get_subrun_dir(cv_dir, inst)
+            # scv_reco2 = Stage(DefaultStageTypes.RECO2)
+            # scv_reco2.run_dir = get_subrun_dir(cv_dir, inst)
 
-            scv_reco1 = Stage(DefaultStageTypes.RECO1)
-            scv_detsim = Stage(DefaultStageTypes.DETSIM)
+            # scv_reco1 = Stage(DefaultStageTypes.RECO1)
+            # scv_detsim = Stage(DefaultStageTypes.DETSIM)
 
             scv_scrub = Stage(DefaultStageTypes.SCRUB, stage_order=self.scrub_stage_order)
             scv_scrub.run_dir = get_subrun_dir(cv_dir, inst)
             scv_scrub.runfunc = self.runfuncs['cv']
 
-            s.add_parents(scv_reco2, workflow.default_fcls)
-            scv_reco2.add_parents(scv_reco1, workflow.default_fcls)
-            scv_reco1.add_parents(scv_detsim, workflow.default_fcls)
-            scv_scrub.add_parents(scv_detsim, workflow.default_fcls)
+            # s.add_parents(scv_reco2, workflow.default_fcls)
+            # scv_reco2.add_parents(scv_reco1, workflow.default_fcls)
+            # scv_reco1.add_parents(scv_detsim, workflow.default_fcls)
+            # scv_scrub.add_parents(scv_detsim, workflow.default_fcls)
+            scv_scrub.add_input_file(input_files[i])
 
             for var, svar in var_caf_stages.items():
                 svar_reco2 = Stage(DefaultStageTypes.RECO2, stage_order=self.var_stage_order)

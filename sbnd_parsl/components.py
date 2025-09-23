@@ -29,8 +29,6 @@ def fcl_future(workdir, stdout, stderr, template, cmd, larsoft_opts, inputs=[], 
     )
 
 
-
-
 def mc_runfunc(self, fcl, inputs, run_dir, template, meta, executor, label='', last_file=None):
     """
     Method bound to each Stage object and run during workflow execution. Use
@@ -44,7 +42,6 @@ def mc_runfunc(self, fcl, inputs, run_dir, template, meta, executor, label='', l
 
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    # only needed for stages that have no inputs
     if self.stage_type != DefaultStageTypes.GEN:
         first_file_name = None
         if not isinstance(inputs[0][0], parsl.app.futures.DataFuture):
@@ -54,11 +51,12 @@ def mc_runfunc(self, fcl, inputs, run_dir, template, meta, executor, label='', l
 
     if self.stage_type != DefaultStageTypes.CAF:
         # from string or posixpath input
+        _label = label
         if label != '':
-            label = label + '-'
+            _label = label + '-'
 
         output_filename = ''.join([
-            str(self.stage_type.name), '-', label,
+            str(self.stage_type.name), '-', _label,
             hash_name(os.path.basename(fcl) + executor.name_salt + str(executor.lar_run_counter)),
             ".root"
         ])
@@ -70,8 +68,10 @@ def mc_runfunc(self, fcl, inputs, run_dir, template, meta, executor, label='', l
     output_file = output_dir / output_filename
     executor.lar_run_counter += 1
 
+    if executor.file_in_db(output_file):
+        return [[output_file], '']
+
     if output_file.is_file():
-        # print(f'Skipping {output_file}, already exists')
         return [[output_file], '']
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -79,6 +79,9 @@ def mc_runfunc(self, fcl, inputs, run_dir, template, meta, executor, label='', l
     if self.stage_type != DefaultStageTypes.CAF:
         output_file_arg_str = f'--output {str(output_file)}'
 
+    # create input arguments
+    # input_file_arg_str: Passed to larsoft template: String containing '-s <filename>' directives
+    # input_arg: Passed to Parsl, contains any data futures dependencies required to start the task 
     input_file_arg_str = ''
     parent_cmd = ''
     dummy_input = None

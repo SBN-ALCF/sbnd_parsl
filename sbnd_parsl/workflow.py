@@ -32,11 +32,12 @@ from types import MethodType
 import itertools
 import pathlib
 from collections import deque
+from datetime import datetime
+import sqlite3
 import logging
 logger = logging.getLogger(__name__)
 
 from enum import Enum, Flag, auto
-from pathlib import Path
 from typing import List, Dict, Optional, Callable
 
 
@@ -124,7 +125,7 @@ class DefaultStageTypes:
 _SUPER = StageType('super', StageProperty._SUPER | StageProperty.NO_FCL)
 
 
-def default_runfunc(stage_self, fcl, input_files, output_dir) -> List[Path]:
+def default_runfunc(stage_self, fcl, input_files, output_dir) -> List[pathlib.Path]:
     """Default function called when each stage is run."""
     input_file_arg_str = ''
     if input_files is not None:
@@ -134,7 +135,7 @@ def default_runfunc(stage_self, fcl, input_files, output_dir) -> List[Path]:
     output_filename = os.path.basename(fcl).replace(".fcl", ".root")
     if output_dir is None:
         output_dir = pathlib.Path('.')
-    output_file = output_dir / Path(output_filename)
+    output_file = output_dir / pathlib.Path(output_filename)
     output_file_arg_str = f'--output {str(output_file)}'
     logger.info(f'lar -c {fcl} {input_file_arg_str} {output_file_arg_str}')
     return [output_file]
@@ -374,7 +375,7 @@ class Workflow:
     fills in the gaps between inputs and outputs
     """
     @staticmethod
-    def default_runfunc(stage_self, fcl, input_files, output_dir) -> List[Path]:
+    def default_runfunc(stage_self, fcl, input_files, output_dir) -> List[pathlib.Path]:
         """Default function called when each stage is run."""
         input_file_arg_str = ''
         if input_files is not None:
@@ -382,12 +383,12 @@ class Workflow:
                 ' '.join([f'-s {str(file)}' for file in input_files])
 
         output_filename = os.path.basename(fcl).replace(".fcl", ".root")
-        output_file = output_dir / Path(output_filename)
+        output_file = output_dir / pathlib.Path(output_filename)
         output_file_arg_str = f'--output {str(output_file)}'
         print(f'lar -c {fcl} {input_file_arg_str} {output_file_arg_str}')
         return [output_file]
 
-    def __init__(self, stage_order: List[StageType], default_fcls: Optional[Dict]=None, run_dir: Path=Path(), runfunc: Optional[Callable]=None):
+    def __init__(self, stage_order: List[StageType], default_fcls: Optional[Dict]=None, run_dir: pathlib.Path=pathlib.Path(), runfunc: Optional[Callable]=None):
         self._stage_order = stage_order
 
         self.default_fcls = {}
@@ -458,14 +459,14 @@ class WorkflowExecutor:
             pass
 
         self.run_opts = settings['run']
-        self.output_dir = Path(self.run_opts['output'])
+        self.output_dir = pathlib.Path(self.run_opts['output'])
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.max_futures = self.run_opts['max_futures']
 
         self.fcl_dir = None
         self.fcls = {}
         try:
-            self.fcl_dir = Path(self.run_opts['fclpath'])
+            self.fcl_dir = pathlib.Path(self.run_opts['fclpath'])
         except KeyError:
             pass
         self.fcls = settings['fcls']
@@ -478,6 +479,24 @@ class WorkflowExecutor:
 
         # track the number of submitted stages
         self._stage_counter = 0
+
+        # file tracking with sqlite as files are created, write them to the
+        # database this allows us to check the database instead of the
+        # filesystem on workflow restarts. While Parsl does this generically
+        # for tasks, using the Parsl task cache requires actually submitting
+        # the task, whereas this check can avoid submitting the task entirely
+        self._disk_db = sqlite3.connect(str(self.output_dir / 'file_cache.db'))
+        self._mem_db = sqlite3.connect(":memory:")
+        self._disk_db.backup(self._mem_db)
+        self._cursor = self._mem_db.cursor()
+        # Create the table if needed
+        self._cursor.execute("""
+            CREATE TABLE IF NOT EXISTS files (
+                filename TEXT PRIMARY KEY,
+                status TEXT,
+                created_at TIMESTAMP
+            )
+        """)
 
 
     def file_generator(self):
@@ -568,24 +587,13 @@ class WorkflowExecutor:
             self.get_task_results()
             time.sleep(10)
 
+        self._mem_db.backup(self._disk_db)
+        self._mem_db.close()
+        self._disk_db.close()
         print('Done')
 
     def get_task_results(self):
         """Loop over all tasks & clear finished ones."""
-        '''
-        def check_future_status(f):
-            if not f.done():
-                return True
-
-            try:
-                print(f'[SUCCESS] task {f.tid} {f.filepath} {f.result()}')
-            except Exception as e:
-                print(f'[FAILED] task {f.tid} {f.filepath}')
-            return False
-
-        self.futures = list(filter(check_future_status, self.futures))
-        '''
-
         remaining_futures = []
         npass = 0
         nfail = 0
@@ -595,19 +603,39 @@ class WorkflowExecutor:
                 continue
             try:
                 f.result()
+                self.mark_file_in_db(f.filepath)
                 npass += 1
             except Exception as e:
-                print(f'[FAILED] task {f.tid} {f.filepath}')
+                print(f'[FAILED] task {f.tid} {f.filepath} ({e})')
                 nfail += 1
         print(f'Futures [SUCCESS]/[FAILED]: {npass}/{nfail}')
+
+        # sync the in-memory database with the disk one
+        self._mem_db.backup(self._disk_db)
         self.futures = remaining_futures
-
-
 
     def setup_single_workflow(self, iteration: int, inputs=None):
         # user should implement this
         pass
 
+    def file_in_db(self, filename: pathlib.Path) -> bool:
+        """Check if the file is in the file database."""
+        result = self._cursor.execute(
+            "SELECT 1 FROM files WHERE filename=?",
+            (str(filename.resolve()),)
+        ).fetchone()
+        return result is not None
+
+    def mark_file_in_db(self, filename, status="created"):
+        """Add or update the file in the database."""
+        str_filename = filename
+        if isinstance(filename, pathlib.Path):
+            str_filename = str(filename.resolve())
+        self._cursor.execute(
+            "INSERT OR REPLACE INTO files (filename, status, created_at) VALUES (?, ?, ?)",
+            (str_filename, status, datetime.now().isoformat())
+        )
+        self._mem_db.commit()
 
 if __name__ == '__main__':
     # TODO demo
