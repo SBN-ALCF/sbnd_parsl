@@ -17,11 +17,10 @@ from parsl.app.app import bash_app
 
 from sbnd_parsl.workflow import StageType, Stage, Workflow, WorkflowExecutor
 from sbnd_parsl.metadata import MetadataGenerator
-from sbnd_parsl.templates import CMD_TEMPLATE_SPACK
+from sbnd_parsl.templates import CMD_TEMPLATE_CONTAINER, CMD_TEMPLATE_SPACK
 from sbnd_parsl.utils import create_default_useropts, create_parsl_config, \
     hash_name
 
-# SBND_RAWDATA_REGEXP = re.compile(r".*data_.*run(\d+)_.*\.root")
 
 def fcl_future(workdir, stdout, stderr, template, cmd, larsoft_opts, inputs=[], outputs=[], pre_job_hook='', post_job_hook=''):
     """Return formatted bash script which produces each future when executed."""
@@ -44,7 +43,7 @@ def runfunc(self, fcl, inputs, run_dir, executor, nevts=-1, nskip=0):
 
     # decode stage takes a string filename
     first_file_name = inputs[0]
-    if self.stage_type == StageType.RECO1:
+    if self.stage_type == StageType.RECO1 or self.stage_type == StageType.DECODE:
         inputs = [inputs, '']
     else:
         first_file_name = inputs[0][0].filename
@@ -52,7 +51,7 @@ def runfunc(self, fcl, inputs, run_dir, executor, nevts=-1, nskip=0):
     if self.stage_type != StageType.CAF:
         # from string or posixpath input
         output_filename = '-'.join([
-            str(self.stage_type.value), os.path.basename(first_file_name)
+            str(self.stage_type.value), f'{nskip:03d}', os.path.basename(first_file_name), 
         ])
     else:
         output_filename = os.path.splitext(os.path.basename(first_file_name))[0] + '.Blind.OKTOLOOK.flat.caf.root'
@@ -84,14 +83,15 @@ def runfunc(self, fcl, inputs, run_dir, executor, nevts=-1, nskip=0):
     parent_cmd = ''
     input_arg = [str(fcl), None]
     if inputs is not None:
-        input_files = inputs[0]
-        parent_cmd = inputs[1]
+        input_files = list(itertools.chain.from_iterable(inputs[0::2]))
+        parent_cmds = '&&'.join(inputs[1::2])
         input_file_arg_str = \
             ' '.join([f'-s {str(file)}' if not isinstance(file, parsl.app.futures.DataFuture) else f'-s {str(file.filepath)}' for file in input_files])
         input_arg = [str(fcl)] + [str(f) if not isinstance(f, parsl.app.futures.DataFuture) else f for f in input_files]
 
-    cmd = f'mkdir -p {run_dir} && cd {run_dir} && lar -c {fcl} {input_file_arg_str} {output_file_arg_str}'
+    cmd = f'mkdir -p {run_dir} && cd {run_dir} && lar -c {fcl} {input_file_arg_str} {output_file_arg_str} --nevts={nevts} --nskip={nskip}'
 
+    print(cmd)
     # decode and reco1 stages have two output streams due to art filters
     # if self.stage_type == StageType.DECODE or self.stage_type == StageType.RECO1:
     #     cmd += f'--output out1:{str(output_filepath)} --output out2:skipped.root'
@@ -116,6 +116,7 @@ def runfunc(self, fcl, inputs, run_dir, executor, nevts=-1, nskip=0):
         stdout = str(run_dir / output_filename.replace(".root", ".out")),
         stderr = str(run_dir / output_filename.replace(".root", ".err")),
         template = CMD_TEMPLATE_SPACK,
+        # template = CMD_TEMPLATE_CONTAINER,
         cmd=cmd,
         larsoft_opts = executor.larsoft_opts,
         inputs = input_arg,
@@ -133,7 +134,7 @@ class DecoderExecutor(WorkflowExecutor):
     def __init__(self, settings: json):
         super().__init__(settings)
 
-        # self.meta = MetadataGenerator(settings['metadata'], self.fcls, defer_check=True)
+        self.meta = MetadataGenerator(settings['metadata'], self.fcls, defer_check=True)
         self.stage_order = [StageType.from_str(key) for key in self.fcls.keys()]
         self.files_per_subrun = settings['run']['files_per_subrun']
         self.run_list = None
@@ -147,7 +148,7 @@ class DecoderExecutor(WorkflowExecutor):
         self.run_counter = 0
 
     def file_generator(self):
-        path_generators = [self.rawdata_path.rglob('data*.root')]
+        path_generators = [self.rawdata_path.rglob('*run9435*.root')]
         generator = itertools.chain(*path_generators)
         for f in generator:
             yield f
@@ -163,23 +164,23 @@ class DecoderExecutor(WorkflowExecutor):
         s.runfunc = runfunc_
         workflow.add_final_stage(s)
 
+        reco1_runfuncs = [functools.partial(runfunc, executor=self, nevts=5, nskip=(i * 5)) for i in range(10)]
+
         for i, file in enumerate(rawdata_files):
-            s2 = Stage(StageType.RECO2)
-            s2.run_dir = get_subrun_dir(self.output_dir, iteration * self.files_per_subrun + i)
+            for j in range(10):
+                s2 = Stage(StageType.RECO2)
+                s2.run_dir = get_subrun_dir(self.output_dir, iteration * self.files_per_subrun + i) / f'{j:03d}'
+                s.add_parents(s2, workflow.default_fcls)
+                s3 = Stage(StageType.RECO1, runfunc=reco1_runfuncs[j])
+                s2.add_parents(s3, workflow.default_fcls)
 
-            # break reco1 into multiple jobs to avoid timing out while
-            # processing large files
-            s3 = Stage(StageType.RECO1)
-            s.add_parents(s2, workflow.default_fcls)
-            s2.add_parents(s3, workflow.default_fcls)
-
-            # icarus decode built into stage0 (reco1)
-            if 'decode' in self.fcls:
-                s4 = Stage(StageType.DECODE)
-                s4.add_input_file(str(file))
-                s3.add_parents(s4, workflow.default_fcls)
-            else:
-                s3.add_input_file(str(file))
+                # icarus decode built into stage0 (reco1)
+                if 'decode' in self.fcls:
+                    s4 = Stage(StageType.DECODE)
+                    s4.add_input_file(str(file))
+                    s3.add_parents(s4, workflow.default_fcls)
+                else:
+                    s3.add_input_file(str(file))
 
         return workflow
 
@@ -195,6 +196,7 @@ def main(settings):
     user_opts['run_dir'] = str(pathlib.Path(settings['run']['output']) / 'runinfo')
     user_opts.update(settings['queue'])
     parsl_config = create_parsl_config(user_opts, [settings['larsoft']['spack_top'], settings['larsoft']['version'], settings['larsoft']['software']])
+    # parsl_config = create_parsl_config(user_opts)
     print(parsl_config)
     parsl.clear()
 

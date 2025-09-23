@@ -106,7 +106,9 @@ class MetadataGenerator:
             raise ValueError(f"{fcl} does not exist.")
 
         m = self.metadata_fcl(fcl)
-        m["tfilemdjsonname"] = filename
+        if "tfilemdjsonname" in m:
+            m["tfilemdjsonname"] = filename
+
         args = []
         for key, value in m.items():
             args.append(f'--{key}')

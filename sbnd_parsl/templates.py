@@ -30,6 +30,19 @@ echo GPU Selected
 echo $CUDA_VISIBLE_DEVICES
 '''
 
+CONTAINER_INIT = r'''
+host=$(hostname -d | sed 's/.*\.\(.*\)\.alcf\.anl\.gov/\1/g')
+if [ $host == "polaris" ]; then
+    export MNT_ARG="-B /lus/grand -B /lus/eagle"
+    module use /soft/spack/gcc/0.6.1/install/modulefiles/Core
+fi
+module load apptainer
+if [ $host == "aurora" ]; then
+    export MNT_ARG="-B /lus/flare"
+    module load fuse-overlayfs
+fi
+'''
+
 
 # define a function so the job can find the full path to fcl by name
 FIND_FCL = r'''
@@ -92,6 +105,10 @@ echo "Config: $TMP_CFG"
 
 {NVIDIA_BEST_CUDA}
 
+# litify: Run on all output files
+LITIFY_LIST=$(dirname {{input}})/litify_list.txt
+sed "s|.*/\(.*\)\.root$|\\1_spine\.h5|g" {{input}} > $LITIFY_LIST
+
 singularity run -B /lus/eagle/ -B /lus/grand/ --nv {{container}} <<EOL
     echo "Running in: "
     pwd
@@ -103,9 +120,19 @@ singularity run -B /lus/eagle/ -B /lus/grand/ --nv {{container}} <<EOL
         echo \$FMATCH_BASEDIR
         echo \$FMATCH_LIBDIR
     fi
-    python {{exe}} -c $TMP_CFG -S {{input}}
+    python {{exe}} -c $TMP_CFG -S {{input}} &&
+    {{{{
+        if [ "{{litify}}x" != "x" ]; then
+            echo "running litify"
+            python {{exe}} -c {{litify}} -S $LITIFY_LIST
+        fi
+    }}}}
 EOL
 echo "moving files"
+if [ "{{litify}}x" != "x" ]; then
+    echo "Using lite files"
+    rename "_spine_spine.h5" "_spine.h5" *_spine_spine.h5
+fi
 mv *.h5 $(dirname {{output}}) || true
 {{post_job_hook}}
 {JOB_POST}
@@ -176,13 +203,10 @@ echo "Current files: "
 ls
 echo "Move fcl."
 
-{{pre_job_hook}}
 echo "Load singularity"
-# module use /soft/spack/gcc/0.6.1/install/modulefiles/Core
-module load apptainer
-module load fuse-overlayfs
+{CONTAINER_INIT}
 set -e
-singularity run -B /lus/flare/ {{container}} <<EOF
+singularity run $MNT_ARG {{container}} <<EOF
     echo "Running in: "
     pwd
     echo "Sourcing products area"
@@ -200,6 +224,7 @@ singularity run -B /lus/flare/ {{container}} <<EOF
         echo "Could not find fcl! Expect subsequent commands to fail."
     fi
     export LOCAL_FCL=\$(basename {{fhicl}})
+    {{pre_job_hook}}
 
     echo "fhicl_from_env=\$fhicl_from_env"
     echo "LOCAL_FCL=\$LOCAL_FCL"
@@ -215,6 +240,9 @@ EOF
 
 echo "mv *.root $(dirname {{output}}) || true"
 mv *.root $(dirname {{output}}) || true
+
+echo "mv *.json $(dirname {{output}}) || true"
+mv *.json $(dirname {{output}}) || true
 
 {{post_job_hook}}
 {JOB_POST}
