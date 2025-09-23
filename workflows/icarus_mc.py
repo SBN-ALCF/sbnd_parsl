@@ -48,14 +48,25 @@ def runfunc(self, fcl, inputs, run_dir, executor, last_file=None, nevts=-1, nski
 
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    # decode stage takes a string filename
-    first_file_name = inputs[0]
+    # unpack the "inputs" arg. Should be: [[list of input files], [list of dependencies], parent_cmd]
+    # the last two elements are specifically to allow combining stages
+    # careful: if the stage has multiple input files, must chain together all of the args
     if self.stage_type == DefaultStageTypes.DECODE:
-        inputs = [inputs, '']
+        inputs = [inputs, [], '']
+
+    input_files = list(itertools.chain.from_iterable(inputs[0::3]))
+    depends = list(itertools.chain.from_iterable(inputs[1::3]))
+    parent_cmd = '&&'.join(pc for pc in inputs[2::3] if pc != '')
+
+    first_file_name = ''
+    if self.stage_type == DefaultStageTypes.DECODE:
+        # decode stage takes a string filename
+        first_file_name = input_files[0]
     else:
         if not isinstance(inputs[0][0], parsl.app.futures.DataFuture):
             first_file_name = inputs[0][0].name
         else:
+            # pathlib path
             first_file_name = inputs[0][0].filename
 
     if self.stage_type != DefaultStageTypes.CAF:
@@ -86,42 +97,38 @@ def runfunc(self, fcl, inputs, run_dir, executor, last_file=None, nevts=-1, nski
     output_file = output_dir / output_filename
     output_file_arg_str = ''
 
-    if self.stage_type == DefaultStageTypes.RECO1:
-        output_file_arg_str = f'--output out1:{str(output_file)} --output out2:skipped.root'
     if self.stage_type != DefaultStageTypes.CAF:
         output_file_arg_str = f'--output {str(output_file)}'
 
     if output_file.is_file():
         print(f'Skipping {output_file}, already exists')
-        return [[output_file], '']
+        return [[output_file], [], '']
 
     # output_filepath = output_dir / output_filename
 
     input_file_arg_str = ''
-    parent_cmd = ''
     dummy_input = None
     if last_file is not None:
         dummy_input = last_file[0][0]
     input_arg = [str(fcl), dummy_input]
 
-    print(inputs)
     if inputs is not None:
-        input_files = list(itertools.chain.from_iterable(inputs[0::2]))
-        parent_cmd = '&&'.join(pc for pc in inputs[1::2] if pc != '')
         input_file_arg_str = \
             ' '.join([f'-s {str(file)}' if not isinstance(file, parsl.app.futures.DataFuture) else f'-s {str(file.filepath)}' for file in input_files])
-        input_arg += [str(f) if not isinstance(f, parsl.app.futures.DataFuture) else f for f in input_files]
+        input_arg += [str(f) if not isinstance(f, parsl.app.futures.DataFuture) else f for f in input_files] + depends
 
     cmd = f'mkdir -p {run_dir} && cd {run_dir} && lar -c {fcl} {input_file_arg_str} {output_file_arg_str} --nevts={nevts} --nskip={nskip}'
 
     if parent_cmd != '':
         cmd = ' && '.join([parent_cmd, cmd])
 
-    print(cmd)
 
     if self.combine:
         # don't submit work, just forward commands to the next task
-        return [[output_file], cmd]
+        # we need to forward this task's dependencies too
+        return [[output_file], input_files, cmd]
+
+    print(cmd)
 
     mg_cmd = ''
     if self.stage_type == OVERLAY:
@@ -155,7 +162,7 @@ def runfunc(self, fcl, inputs, run_dir, executor, last_file=None, nevts=-1, nski
     # this modifies the list passed in by WorkflowExecutor
     executor.futures.append(future.outputs[0])
 
-    return [future.outputs, '']
+    return [future.outputs, [], '']
 
 
 class DecoderExecutor(WorkflowExecutor):
@@ -209,28 +216,28 @@ class DecoderExecutor(WorkflowExecutor):
         decode_runfuncs = [functools.partial(runfunc, executor=self, nevts=5, nskip=(i * 5)) for i in range(10)]
 
         for i, file in enumerate(rawdata_files):
-            # for j in range(10):
-            s_stage1 = Stage(DefaultStageTypes.STAGE1)
-            s_stage0 = Stage(DefaultStageTypes.STAGE0)
-            s_overlay_wfm = Stage(OVERLAY_WFM)
-            s_detsim = Stage(DefaultStageTypes.DETSIM)
-            s_g4 = Stage(DefaultStageTypes.G4)
-            s_overlay = Stage(OVERLAY)
-            s_decode = Stage(DefaultStageTypes.DECODE, runfunc=decode_runfuncs[j])
+            for j in range(10):
+                s_stage1 = Stage(DefaultStageTypes.STAGE1)
+                s_stage0 = Stage(DefaultStageTypes.STAGE0)
+                s_overlay_wfm = Stage(OVERLAY_WFM)
+                s_detsim = Stage(DefaultStageTypes.DETSIM)
+                s_g4 = Stage(DefaultStageTypes.G4)
+                s_overlay = Stage(OVERLAY)
+                s_decode = Stage(DefaultStageTypes.DECODE, runfunc=decode_runfuncs[j])
 
-            s_stage1.run_dir = get_subrun_dir(self.output_dir, iteration * self.files_per_subrun + i) / f'{j:03d}'
+                s_stage1.run_dir = get_subrun_dir(self.output_dir, iteration * self.files_per_subrun + i) / f'{j:03d}'
 
-            s.add_parents(s_stage1, workflow.default_fcls)
-            s_stage1.add_parents(s_stage0, workflow.default_fcls)
-            s_stage0.add_parents(s_overlay_wfm, workflow.default_fcls)
-            s_overlay_wfm.add_parents(s_detsim, workflow.default_fcls)
-            s_detsim.add_parents(s_g4, workflow.default_fcls)
-            s_g4.add_parents(s_overlay, workflow.default_fcls)
-            s_overlay.add_parents(s_decode, workflow.default_fcls)
+                s.add_parents(s_stage1, workflow.default_fcls)
+                s_stage1.add_parents(s_stage0, workflow.default_fcls)
+                s_stage0.add_parents(s_overlay_wfm, workflow.default_fcls)
+                s_overlay_wfm.add_parents(s_detsim, workflow.default_fcls)
+                s_detsim.add_parents(s_g4, workflow.default_fcls)
+                s_g4.add_parents(s_overlay, workflow.default_fcls)
+                s_overlay.add_parents(s_decode, workflow.default_fcls)
 
-            s_decode.add_input_file(str(file))
-            s_decode.combine = True
-            s_detsim.combine = True
+                s_decode.add_input_file(str(file))
+                s_decode.combine = True
+                s_detsim.combine = True
 
         return workflow
 

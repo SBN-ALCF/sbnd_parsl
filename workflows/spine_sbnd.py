@@ -15,7 +15,7 @@ import parsl
 from parsl.data_provider.files import File
 from parsl.app.app import bash_app
 
-from sbnd_parsl.workflow import StageType, Stage, Workflow, WorkflowExecutor, SPINE
+from sbnd_parsl.workflow import StageType, Stage, Workflow, WorkflowExecutor, DefaultStageTypes
 from sbnd_parsl.metadata import MetadataGenerator
 from sbnd_parsl.templates import SPINE_TEMPLATE
 from sbnd_parsl.utils import create_default_useropts, create_parsl_config
@@ -115,7 +115,7 @@ class SpineExecutor(WorkflowExecutor):
     def __init__(self, settings: json):
         super().__init__(settings)
 
-        self.stage_order = [SPINE]
+        self.stage_order = [DefaultStageTypes.SPINE]
         self.files_per_subrun = settings['run']['files_per_subrun']
         self.larcv_path = pathlib.Path(settings['workflow']['larcv_path'])
         self.spine_opts = settings['spine']
@@ -124,13 +124,13 @@ class SpineExecutor(WorkflowExecutor):
         self.spine_opts.update({'cores_per_worker': settings['workflow']['cores_per_worker']})
 
     def file_generator(self):
-        path_generators = [self.larcv_path.rglob('larcv*.root')]
-        generator = itertools.chain(*path_generators)
-        for f in generator:
-            yield f
-        # with open(self.filelist, 'r') as f:
-        #     for line in f.readlines():
-        #         yield pathlib.Path(line.strip())
+        # path_generators = [self.larcv_path.rglob('larcv*.root')]
+        # generator = itertools.chain(*path_generators)
+        # for f in generator:
+        #     yield f
+        with open(self.filelist, 'r') as f:
+            for line in f.readlines():
+                yield pathlib.Path(line.strip())
 
     def setup_single_workflow(self, iteration: int, larcv_files: List[pathlib.Path], last_file=None):
         if not larcv_files:
@@ -138,7 +138,7 @@ class SpineExecutor(WorkflowExecutor):
 
         workflow = Workflow(self.stage_order, default_fcls=self.fcls)
         runfunc_ = functools.partial(runfunc, iteration=iteration, executor=self)
-        s = Stage(SPINE)
+        s = Stage(DefaultStageTypes.SPINE)
         s.run_dir = get_subrun_dir(self.output_dir, iteration)
         s.runfunc = runfunc_
 
