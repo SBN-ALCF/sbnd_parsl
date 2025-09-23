@@ -25,6 +25,12 @@ class ResultFuture(Future):
 
 
 def my_update_memo(self, task, r: Future) -> None:
+    """
+    update memo function that stores a copy of the future result, instead of
+    the original future, in the memo_lookup_table. The original future result
+    contains references to the parent AppFutures, preventing them from being
+    garbage collected otherwise.
+    """
     # TODO: could use typeguard
     assert isinstance(r, Future)
 
@@ -57,6 +63,13 @@ def my_wipe_task(self, task_id: int) -> None:
 
 
 def my_check_memo(self, task):
+    """
+    check_memo function that removes tasks from the task record. This
+    prevents the task record from growing in memory. Check happens once a task
+    completes, and dependent tasks are removed from the record.
+
+    This assumes that no two tasks have the same dependent task!!!
+    """
     task_id = task['id']
 
     if not self.memoize or not task['memoize']:
@@ -90,10 +103,12 @@ def my_check_memo(self, task):
 
 
 
-def apply_hacks(dfk):
-    func_update_memo = MethodType(my_update_memo, dfk.memoizer)
-    dfk.memoizer.update_memo = func_update_memo
-    # func0 = MethodType(my_wipe_task, self._dfk)
-    # self._dfk.wipe_task = func0
-    func_check_memo = MethodType(my_check_memo, dfk.memoizer)
-    dfk.memoizer.check_memo = func_check_memo
+def apply_hacks(dfk, update_memo=True, check_memo=False):
+    """Overwrite functions in DataFlowKernel object."""
+    if update_memo:
+        func_update_memo = MethodType(my_update_memo, dfk.memoizer)
+        dfk.memoizer.update_memo = func_update_memo
+    
+    if check_memo:
+        func_check_memo = MethodType(my_check_memo, dfk.memoizer)
+        dfk.memoizer.check_memo = func_check_memo
