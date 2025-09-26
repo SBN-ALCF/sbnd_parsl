@@ -43,6 +43,12 @@ if [ $host == "aurora" ]; then
 fi
 '''
 
+PROXY=r'''
+export http_proxy="http://proxy.alcf.anl.gov:3128"
+export https_proxy="http://proxy.alcf.anl.gov:3128"
+export ftp_proxy="http://proxy.alcf.anl.gov:3128"
+'''
+
 
 # define a function so the job can find the full path to fcl by name
 FIND_FCL = r'''
@@ -210,6 +216,7 @@ singularity run $MNT_ARG {{container}} <<EOF
     echo "Running in: "
     pwd
     echo "Sourcing products area"
+    {PROXY}
     export EXPERIMENT={{experiment}}
     source {{larsoft_top}}/setup
     setup {{software}} {{version}} -q {{qual}}

@@ -477,8 +477,9 @@ class WorkflowExecutor:
         self.workflow_opts = settings['workflow']
         self.workflow = None
 
-        # track the number of submitted stages
+        # optionally track the number of submitted stages. Runfunc should modify these
         self._stage_counter = 0
+        self._skip_counter = 0
 
         # file tracking with sqlite as files are created, write them to the
         # database this allows us to check the database instead of the
@@ -591,6 +592,7 @@ class WorkflowExecutor:
         self._mem_db.close()
         self._disk_db.close()
         print('Done')
+        print(f'(submitted/skipped) = ({self._stage_counter}/{self._skip_counter})')
 
     def get_task_results(self):
         """Loop over all tasks & clear finished ones."""
